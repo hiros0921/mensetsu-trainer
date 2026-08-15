@@ -35,4 +35,26 @@ class DomainIsolationTest {
         () -> Class.forName("org.postgresql.Driver"),
         "domain に PostgreSQL のドライバが入っている");
   }
+
+  @Test
+  @DisplayName("domain のクラスパスに Claude の SDK が入っていないこと")
+  void anthropicSdkIsNotOnClasspath() {
+    // 仕様書8章②「LLM呼び出しをインターフェースで抽象化すること」。
+    // InterviewerEngine と EngineObserver は domain 側にあり、その実装は app 側にある。
+    // ここに SDK が入ったら、依存の向きが逆になっている。
+    assertThrows(
+        ClassNotFoundException.class,
+        () -> Class.forName("com.anthropic.client.AnthropicClient"),
+        "domain に Claude の SDK が入っている。実装は app 側に置くこと");
+  }
+
+  @Test
+  @DisplayName("domain のクラスパスに JSON のライブラリが入っていないこと")
+  void jacksonIsNotOnClasspath() {
+    // 境界で受け取る形（AnalysisJson）と、中で使う形（Analysis）を分けてある理由。
+    assertThrows(
+        ClassNotFoundException.class,
+        () -> Class.forName("com.fasterxml.jackson.databind.ObjectMapper"),
+        "domain に Jackson が入っている");
+  }
 }

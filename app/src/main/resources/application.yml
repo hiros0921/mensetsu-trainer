@@ -27,7 +27,7 @@ mensetsu:
     # 空なら CLAUDE 実装は使わない。第3段階まではこれでよい。
     # 値は .env から渡す。application.yml には書かない（仕様書10章）。
     api-key: ${ANTHROPIC_API_KEY:}
-    model: ${MENSETSU_LLM_MODEL:claude-sonnet-5}
+    model: ${MENSETSU_LLM_MODEL:claude-opus-5}
     # 深掘りの表示が始まるまでの目標値（第1段階 Q5）。
     # 超えたものは engine_calls から拾える。
     first-token-target-ms: 3000

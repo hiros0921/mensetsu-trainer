@@ -8,8 +8,43 @@ plugins {
   id("io.spring.dependency-management")
 }
 
+// 本物の Claude API を相手に面接を1回通し、応答時間を測る。
+//
+//   ./gradlew :app:llmcheck
+//   ./gradlew :app:llmcheck --args="PRESSURE adaptive"
+//
+// 【重要】これは課金される。
+//
+// .env をここで読んで、子プロセスの環境変数に渡す。Gradle も Spring も
+// .env を自動では読まない。値はログに出さない（仕様書10章）。
+tasks.register<JavaExec>("llmcheck") {
+  group = "verification"
+  description = "本物の Claude API で面接を1回通し、初文字までの時間を測る（課金あり）"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.app.LlmCheck")
+  doFirst {
+    val env = rootProject.file(".env")
+    if (env.exists()) {
+      env.readLines()
+        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+        .forEach { line ->
+          val i = line.indexOf('=')
+          environment(line.substring(0, i).trim(), line.substring(i + 1).trim())
+        }
+    }
+  }
+}
+
 dependencies {
   implementation(project(":domain"))
+
+  // Claude API の公式 SDK。
+  //
+  // 【重要】これは app 側にだけ入れる。domain に入れてはいけない。
+  // ステートマシンが HTTP クライアントに依存すると、
+  // 「フレームワークなしで単体テストできる」が成立しなくなる。
+  // domain/src/test の DomainIsolationTest が、その番人になっている。
+  implementation("com.anthropic:anthropic-java:2.54.0")
 
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-websocket")
