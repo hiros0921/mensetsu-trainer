@@ -29,7 +29,17 @@ tasks.register<JavaExec>("llmcheck") {
         .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
         .forEach { line ->
           val i = line.indexOf('=')
-          environment(line.substring(0, i).trim(), line.substring(i + 1).trim())
+          val key = line.substring(0, i).trim()
+          // 【重要】シェルで指定した値を .env で上書きしない。
+          //
+          // 一度これで間違えた。MENSETSU_LLM_MODEL=claude-opus-5 を付けて実行したのに、
+          // .env の claude-sonnet-5 が勝ち、別のモデルの数字を opus-5 の数字として
+          // 報告しかけた。エラーは出ない。出力のモデル名を見て初めて気づいた。
+          //
+          // .env は「指定が無いときの既定」。指定があるならそちらを尊重する。
+          if (System.getenv(key) == null) {
+            environment(key, line.substring(i + 1).trim())
+          }
         }
     }
   }

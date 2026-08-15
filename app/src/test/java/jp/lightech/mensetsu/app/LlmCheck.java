@@ -56,6 +56,8 @@ public final class LlmCheck {
     Mode mode = args.length > 0 ? Mode.valueOf(args[0]) : Mode.ENGINEER;
     String thinking = args.length > 1 ? args[1] : LlmSettings.THINKING_OFF;
     String model = System.getenv().getOrDefault("MENSETSU_LLM_MODEL", "claude-opus-5");
+    // 観察は分類作業なので、別のモデルにできる。空なら発言と同じものを使う。
+    String analysisModel = System.getenv().getOrDefault("MENSETSU_ANALYSIS_MODEL", "");
     long target =
         Long.parseLong(System.getenv().getOrDefault("MENSETSU_FIRST_TOKEN_TARGET_MS", "3000"));
 
@@ -64,10 +66,11 @@ public final class LlmCheck {
       System.exit(2);
     }
 
-    LlmSettings settings = new LlmSettings(model, thinking, "low", target, 400);
+    LlmSettings settings = new LlmSettings(model, analysisModel, thinking, "low", target, 400);
     System.out.printf(
-        "モデル %s ／ 思考 %s ／ 深さ %s ／ 目標 %dms%n%n",
-        settings.model(), settings.thinkingMode(), settings.effort(), target);
+        "発言 %s ／ 観察 %s ／ 思考 %s ／ 深さ %s ／ 目標 %dms%n%n",
+        settings.model(), settings.effectiveAnalysisModel(),
+        settings.thinkingMode(), settings.effort(), target);
 
     AnthropicClient client = AnthropicOkHttpClient.fromEnv();
     Recorder recorder = new Recorder(target, thinking);
@@ -127,7 +130,7 @@ public final class LlmCheck {
   private static void summarize(Outcome outcome, Recorder r, long target, long wallMs) {
     System.out.println();
     System.out.println("=".repeat(72));
-    System.out.printf("  実測（モデル %s ／ 思考 %s）%n", r.model, r.thinking);
+    System.out.printf("  実測（思考 %s ／ 深さ low）%n", r.thinking);
     System.out.println("=".repeat(72));
 
     report(r, EngineCall.NEXT_QUESTION, "深掘りの生成", target);
@@ -170,6 +173,7 @@ public final class LlmCheck {
     System.out.printf(
         "  %s（%d件）: 初文字 最小 %dms ／ 中央 %dms ／ 最大 %dms ／ 目標超え %d件%n",
         label, calls.size(), v[0], v[v.length / 2], v[v.length - 1], over);
+    System.out.printf("      使ったモデル: %s%n", calls.get(0).model());
   }
 
   // ── 記録する側 ──

@@ -6,7 +6,9 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
+import com.anthropic.models.messages.StructuredOutputConfig;
 import com.anthropic.models.messages.ThinkingConfigAdaptive;
+import com.anthropic.models.messages.ThinkingConfigParam;
 import com.anthropic.models.messages.ThinkingConfigDisabled;
 import jp.lightech.mensetsu.domain.interview.Answer;
 import jp.lightech.mensetsu.domain.interview.InterviewState;
@@ -47,6 +49,14 @@ public final class ClaudeEngine implements InterviewerEngine {
 
   /** 直前に使った相槌。同じものを続けて出さないために覚えておく。 */
   private String lastFiller = "";
+
+  /**
+   * 観察に使うモデルが深さ（effort）を受け付けるか。
+   *
+   * <p>最初は「受け付ける」とみなして投げ、断られたら false にして以後付けない。
+   * モデルごとの対応表をコードに持たないための仕掛け。
+   */
+  private volatile boolean analysisEffortSupported = true;
 
   public ClaudeEngine(AnthropicClient client, LlmSettings settings, EngineObserver observer) {
     this.client = client;
@@ -132,21 +142,27 @@ public final class ClaudeEngine implements InterviewerEngine {
 
     long started = System.nanoTime();
     try {
-      StructuredMessageCreateParams<AnalysisJson> params =
-          MessageCreateParams.builder()
-              .model(settings.model())
-              .maxTokens(600)
-              .system("あなたは面接の回答を観察する係です。評価や判定はしません。")
-              .addUserMessage(Prompts.analyze(state, answer.text()))
-              .outputConfig(AnalysisJson.class)
-              .build();
-
-      AnalysisJson json =
-          client.messages().create(params).content().stream()
-              .flatMap(cb -> cb.text().stream())
-              .map(t -> t.text())
-              .findFirst()
-              .orElse(null);
+      // 【重要】ここにも思考の設定を入れる。
+      //
+      // 最初は入れ忘れていた。生成側だけ「思考なし・深さ low」にして、観察側は既定のまま
+      // 走っていた。実測（8件）: 観察が 3200〜6313ms、生成が 739〜1692ms。
+      // 観察のほうが4〜8倍遅く、利用者の待ち時間の大半を占めていた。
+      //
+      // 観察は「数字があるか」「固有名詞があるか」を見るだけの作業で、深い推論は要らない。
+      // 深さを上げても正しくならない種類の仕事に、時間を払っていた。
+      //
+      // 出力の上限も上げる。600 では日本語の JSON が途中で切れて、
+      // 解析に失敗した（実測で1件）。切れた JSON は「観察できなかった」ではなく
+      // 「壊れた応答」なので、原因が分かりにくい失敗になる。
+      // 【重要】深さと形式は、同じ outputConfig に両方入れる。
+      //
+      // ここも一度間違えた。applyThinking() で深さを入れたあとに
+      // outputConfig(AnalysisJson.class) を呼ぶと、後者が outputConfig ごと
+      // 差し替えるので、深さの指定が消える。消えても API は通るし、結果も正しい。
+      // 遅くなるだけなので、測らないと気づけない。
+      //
+      // StructuredOutputConfig は effort と format の両方を持てる。こちらを使う。
+      AnalysisJson json = callAnalyze(state, answer, analysisEffortSupported);
 
       if (json == null) {
         record(EngineCall.ANALYZE_ANSWER, -1, started, false, "観察の応答が空でした");
@@ -157,12 +173,63 @@ public final class ClaudeEngine implements InterviewerEngine {
       return json.toDomain();
 
     } catch (RuntimeException e) {
+      // 【重要】モデルごとの対応表をコードに埋め込まない。
+      //
+      // 実測で踏んだ: claude-haiku-4-5 は effort を受け付けず、8件すべてが 400 で落ちた。
+      // 「このモデルは effort に対応」という一覧をコードに書くと、モデルが増えるたびに
+      // 直しに来ることになり、直し忘れると静かに壊れる。
+      //
+      // 断られたら、その1回だけ深さを外して投げ直し、以後このセッションでは付けない。
+      // 対応表は API に聞く。こちらは覚えるだけ。
+      if (analysisEffortSupported && mentionsEffortUnsupported(e)) {
+        analysisEffortSupported = false;
+        try {
+          AnalysisJson json = callAnalyze(state, answer, false);
+          if (json != null) {
+            record(EngineCall.ANALYZE_ANSWER, millisSince(started), started, true,
+                "深さの指定を外して再試行");
+            return json.toDomain();
+          }
+        } catch (RuntimeException retry) {
+          record(EngineCall.ANALYZE_ANSWER, -1, started, false, describe(retry));
+          return Analysis.empty("観察に失敗しました");
+        }
+      }
       record(EngineCall.ANALYZE_ANSWER, -1, started, false, describe(e));
       // 【重要】ここで適当な観察を作らない。
       // 嘘の観察を返すと、圧の計算と段数のカウントが狂う。
       // 「観察できなかった」を正直に返すほうが、あとから追える。
       return Analysis.empty("観察に失敗しました");
     }
+  }
+
+  /** 観察を1回投げる。深さを付けるかどうかだけが違う。 */
+  private AnalysisJson callAnalyze(InterviewState state, Answer answer, boolean withEffort) {
+    var format = StructuredOutputConfig.<AnalysisJson>builder().format(AnalysisJson.class);
+    if (withEffort) {
+      format.effort(effortOf(settings.effort()));
+    }
+    StructuredMessageCreateParams<AnalysisJson> params =
+        MessageCreateParams.builder()
+            .model(settings.effectiveAnalysisModel())
+            .maxTokens(1200)
+            .system("あなたは面接の回答を観察する係です。評価や判定はしません。")
+            .addUserMessage(Prompts.analyze(state, answer.text()))
+            .thinking(thinkingConfig())
+            .outputConfig(format.build())
+            .build();
+
+    return client.messages().create(params).content().stream()
+        .flatMap(cb -> cb.text().stream())
+        .map(t -> t.text())
+        .findFirst()
+        .orElse(null);
+  }
+
+  /** 深さを受け付けないと断られたか。文言で判定するのは弱いので、型と文言の両方を見る。 */
+  private static boolean mentionsEffortUnsupported(RuntimeException e) {
+    String m = e.getMessage();
+    return m != null && m.contains("effort") && m.contains("does not support");
   }
 
   // ── 失敗したときのつなぎ ──
@@ -184,14 +251,17 @@ public final class ClaudeEngine implements InterviewerEngine {
   // ── 細かい道具 ──
 
   private void applyThinking(MessageCreateParams.Builder b) {
+    b.thinking(thinkingConfig());
+    b.outputConfig(OutputConfig.builder().effort(effortOf(settings.effort())).build());
+  }
+
+  private ThinkingConfigParam thinkingConfig() {
     if (LlmSettings.THINKING_OFF.equals(settings.thinkingMode())) {
       // 【重要】思考を切れるのは effort が high 以下のときだけ。
       // xhigh / max と組み合わせると API が 400 を返す。
-      b.thinking(ThinkingConfigDisabled.builder().build());
-    } else {
-      b.thinking(ThinkingConfigAdaptive.builder().build());
+      return ThinkingConfigParam.ofDisabled(ThinkingConfigDisabled.builder().build());
     }
-    b.outputConfig(OutputConfig.builder().effort(effortOf(settings.effort())).build());
+    return ThinkingConfigParam.ofAdaptive(ThinkingConfigAdaptive.builder().build());
   }
 
   private static OutputConfig.Effort effortOf(String name) {
@@ -235,7 +305,9 @@ public final class ClaudeEngine implements InterviewerEngine {
         new EngineCall(
             purpose,
             kind(),
-            settings.model(),
+            EngineCall.ANALYZE_ANSWER.equals(purpose)
+                ? settings.effectiveAnalysisModel()
+                : settings.model(),
             firstTokenMs < 0 ? total : firstTokenMs,
             total,
             ok,
