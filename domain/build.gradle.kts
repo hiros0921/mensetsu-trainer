@@ -41,3 +41,26 @@ tasks.register<JavaExec>("policycompare") {
   classpath = sourceSets["test"].runtimeClasspath
   mainClass.set("jp.lightech.mensetsu.domain.scoring.PolicyCompare")
 }
+
+// 圧の設定を、同じ回答パターンに当てて比べる。
+//
+//   ./gradlew :domain:pressuresweep
+//
+// 幅をいくつにすべきかは、文章で考えても決まらない。回答のパターンごとに
+// 圧がどう動くかを並べて初めて選べる。第7段階で諏訪さんが決めるための道具。
+tasks.register<JavaExec>("pressuresweep") {
+  group = "verification"
+  description = "圧の設定案を同じ回答パターンに当てて比べる"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.domain.interview.PressureSweep")
+}
+
+// 圧迫面接モードの基準案を比べる。
+//
+//   ./gradlew :domain:pressurepolicy
+tasks.register<JavaExec>("pressurepolicy") {
+  group = "verification"
+  description = "圧迫面接モードのスコアリング案を、圧の設定ごとに比べる"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.domain.scoring.PressurePolicyCompare")
+}

@@ -23,7 +23,13 @@
   .bar b { font-weight:600; }
   .gauge { flex:1; min-width:120px; height:8px; background:#8882; border-radius:4px; overflow:hidden; }
   .gauge > i { display:block; height:100%; width:20%; background:#d66; transition:width .4s; }
-  #log { border:1px solid var(--line); border-radius:8px; padding:12px; min-height:280px; }
+  .stage { display:flex; gap:14px; align-items:flex-start; }
+  .face { flex:0 0 120px; text-align:center; }
+  .face img { width:120px; height:120px; display:block;
+              transition: opacity .35s ease; }   /* 【重要】演出はこれ以上足さない（仕様書6章） */
+  .face img.fading { opacity:0; }
+  .face .name { font-size:.76rem; color:var(--dim); margin-top:4px; }
+  #log { flex:1; border:1px solid var(--line); border-radius:8px; padding:12px; min-height:280px; }
   .turn { margin-bottom:14px; }
   .who { font-size:.78rem; color:var(--dim); }
   .q { white-space:pre-wrap; }
@@ -72,7 +78,13 @@
     <span id="pnum" class="meta">—</span>
     <span id="engine" class="meta"></span>
   </div>
-  <div id="log"></div>
+  <div class="stage">
+    <div class="face">
+      <img id="faceImg" src="/img/calm.svg" alt="面接官">
+      <div class="name" id="faceName">平常</div>
+    </div>
+    <div id="log"></div>
+  </div>
   <form id="form">
     <textarea id="text" placeholder="回答を入力して Ctrl+Enter"></textarea>
     <button id="send" type="submit">送信</button>
@@ -131,6 +143,7 @@ function handle(m) {
       }
       current = null;
       setPhase(m.phase, m.pressure);
+      setFace(m.face, m.faceLabel);
       enable(true);
       answeredAt = Date.now();
       break;
@@ -152,6 +165,22 @@ function handle(m) {
       enable(true);
       break;
   }
+}
+
+// 表情の切り替え（仕様書6章）。
+// 【重要】CSS のフェードだけ。それ以上の演出は行わない。
+// 画像は仮のもの。同じファイル名で後から差し替えられる。
+let currentFace = 'calm';
+function setFace(key, label) {
+  if (!key || key === currentFace) return;
+  currentFace = key;
+  const img = $('faceImg');
+  img.classList.add('fading');
+  setTimeout(() => {
+    img.src = `/img/${key}.svg`;
+    $('faceName').textContent = label || '';
+    img.classList.remove('fading');
+  }, 350);
 }
 
 function setPhase(phase, pressure) {

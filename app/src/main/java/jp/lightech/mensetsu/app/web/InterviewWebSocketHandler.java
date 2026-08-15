@@ -153,6 +153,10 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
     m.put("depth", q.depth());
     m.put("phase", state.phase().name());
     m.put("pressure", state.pressure());
+    // 表情（仕様書6章）。画面は key から画像のファイル名を組み立てる。
+    var face = service.expression(session);
+    m.put("face", face.fileKey());
+    m.put("faceLabel", face.label());
     m.put("turnNo", state.turnNo() + 1);
     send(ws, m);
   }

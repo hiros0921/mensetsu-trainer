@@ -9,6 +9,8 @@ import jp.lightech.mensetsu.app.llm.LlmSettings;
 import jp.lightech.mensetsu.app.store.SessionStore;
 import jp.lightech.mensetsu.domain.interview.Answer;
 import jp.lightech.mensetsu.domain.interview.CannedLines;
+import jp.lightech.mensetsu.domain.interview.Expression;
+import jp.lightech.mensetsu.domain.interview.ExpressionRules;
 import jp.lightech.mensetsu.domain.interview.InterviewMachine;
 import jp.lightech.mensetsu.domain.interview.InterviewState;
 import jp.lightech.mensetsu.domain.interview.InterviewerProfile;
@@ -54,6 +56,14 @@ public class InterviewService {
   private final AnthropicClient claude;
   private final LlmSettings llmSettings;
   private final boolean llmAvailable;
+
+  /**
+   * 表情の境目。第7段階の案E1。まだ採用されていない。
+   *
+   * <p>圧の設定を決めてから、こちらを調整するのが順番。圧の幅が変わると
+   * 表情の出方も変わる。
+   */
+  private static final ExpressionRules EXPRESSION_RULES = ExpressionRules.proposalE1();
 
   /** 進行中の面接。キーは外に見せる識別子。 */
   private final Map<UUID, Live> live = new ConcurrentHashMap<>();
@@ -171,6 +181,42 @@ public class InterviewService {
     Score score = session.policy.evaluate(new Scorer(session.policy.params()).score(session.state));
     store.saveScore(session.dbId, score);
     return score;
+  }
+
+  /**
+   * 今の表情（仕様書6章）。
+   *
+   * <p>圧だけでなく、直前の回答に中身があったかも見る。圧だけで切り替えると、
+   * エンジニア面接では圧がほとんど動かないので表情が固まったままになる。
+   */
+  public Expression expression(Live session) {
+    var last = session.state.history().stream().reduce((a, b) -> b);
+    if (last.isEmpty()) {
+      return EXPRESSION_RULES.atStart(session.state.pressure());
+    }
+    var a = last.get().analysis();
+    return EXPRESSION_RULES.pick(
+        session.state.pressure(),
+        a.substantive(),
+        !a.technicalTerms().isEmpty(),
+        substantiveStreak(session));
+  }
+
+  /**
+   * 中身のある回答が何回続いているか。
+   *
+   * <p>「好意的」は流れに対する反応なので、直前の1回だけでは決められない。
+   */
+  private static int substantiveStreak(Live session) {
+    var history = session.state.history();
+    int streak = 0;
+    for (int i = history.size() - 1; i >= 0; i--) {
+      if (!history.get(i).analysis().substantive()) {
+        break;
+      }
+      streak++;
+    }
+    return streak;
   }
 
   /** その場面で言う相槌。LLM を呼ばないので待ち時間ゼロ（第1段階 Q5）。 */

@@ -211,6 +211,80 @@ public record ScoringPolicy(
     return List.of(proposalA(), proposalB(), proposalC());
   }
 
+  // ══════════════════════════════════════════════════════════════════
+  //  圧迫面接モードの基準【案】（第7段階）
+  //  採用されていません。
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * 案R1「一貫性が主軸」。
+   *
+   * <p>圧迫面接で突かれるのは、前の発言との食い違い。だから一貫性を最も重く見る、という立場。
+   * 諏訪さんが第5段階で示された見立てをそのまま重みにしたもの。
+   *
+   * <p><b>ただし懸念があります。</b> 一貫性の判定は LLM がしており、揺らぐ。
+   * エンジニア面接では、その揺らぎを重み15に抑えることで影響を小さくしました。
+   * この案は逆に、いちばん当てにならない軸に最大の重みを置くことになります。
+   *
+   * <p>実測の例（第6段階）: 同じ台本を2回流して「食い違い2回」と「食い違い0回」に分かれ、
+   * 一貫性が 71点と100点で29点動きました。重み40なら、合計点が11.6点動きます。
+   */
+  public static ScoringPolicy proposalR1() {
+    return new ScoringPolicy(
+        "pressure-r1",
+        "案R1・一貫性が主軸",
+        "食い違いを突かれる面接。一貫性を最重視。ただし判定が揺らぐ軸でもある",
+        Weights.of(20, 10, 40, 15, 15),
+        new GradeThresholds(88, 74, 58, 42),
+        new AxisParams(30, 200, 6000),
+        UnmeasuredHandling.ZERO);
+  }
+
+  /**
+   * 案R2「一貫性と具体性を並べる」。
+   *
+   * <p>圧に押されると、回答から数字と主語が消える。「チームが決めました」「たしか〜だったと」。
+   * 突かれるのは食い違いだけでなく、具体性が落ちることそのものだ、という立場。
+   *
+   * <p>一貫性の重みを案R1より下げてあるので、判定の揺らぎの影響も小さくなります。
+   */
+  public static ScoringPolicy proposalR2() {
+    return new ScoringPolicy(
+        "pressure-r2",
+        "案R2・一貫性と具体性を並べる",
+        "圧に押されると数字と主語が消える。食い違いと具体性の両方を見る",
+        Weights.of(30, 10, 30, 15, 15),
+        new GradeThresholds(88, 74, 58, 42),
+        new AxisParams(30, 200, 6000),
+        UnmeasuredHandling.ZERO);
+  }
+
+  /**
+   * 案R3「崩れないことを見る」。
+   *
+   * <p>圧迫面接で試されるのは、詰まらずに答え続けられるかだ、という立場。
+   * 沈黙の重みを大きく取る。
+   *
+   * <p>沈黙は時間の記録が要ります。画面から入力すれば取れますが、
+   * 台本で回した検証では0で埋まり「測れなかった」になります。
+   * この案を選ぶ場合、測れない面接では重みの25が丸ごと0点になります（扱いは ZERO）。
+   */
+  public static ScoringPolicy proposalR3() {
+    return new ScoringPolicy(
+        "pressure-r3",
+        "案R3・崩れないことを見る",
+        "詰まらずに答え続けられるか。沈黙を重く見る",
+        Weights.of(25, 10, 25, 15, 25),
+        new GradeThresholds(88, 74, 58, 42),
+        new AxisParams(30, 200, 6000),
+        UnmeasuredHandling.ZERO);
+  }
+
+  /** 圧迫面接モードの3案。 */
+  public static List<ScoringPolicy> pressureProposals() {
+    return List.of(proposalR1(), proposalR2(), proposalR3());
+  }
+
   /**
    * 測れなかった軸の扱いだけを差し替えた同じ案。
    *
