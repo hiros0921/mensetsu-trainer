@@ -117,22 +117,41 @@ class AdoptedPolicyTest {
   }
 
   @Test
-  @DisplayName("エンジニア面接以外では、基準を引こうとすると止まること")
-  void otherModesRefuseToScore() {
+  @DisplayName("決まっていないモードでは、基準を引こうとすると止まること")
+  void undecidedModesRefuseToScore() {
     // 【重要】黙って流用してはいけない。点は出るしエラーも出ないが、
     // その数字が別のモードの基準で出たことは、誰にも分からなくなる。
     assertEquals(ScoringPolicy.adoptedEngineer(), ScoringPolicies.forMode(Mode.ENGINEER));
-
-    IllegalStateException pressure =
-        assertThrows(IllegalStateException.class, () -> ScoringPolicies.forMode(Mode.PRESSURE));
-    assertTrue(pressure.getMessage().contains("第7段階"), pressure.getMessage());
+    assertEquals(ScoringPolicy.adoptedPressure(), ScoringPolicies.forMode(Mode.PRESSURE));
 
     IllegalStateException english =
         assertThrows(IllegalStateException.class, () -> ScoringPolicies.forMode(Mode.ENGLISH));
     assertTrue(english.getMessage().contains("第8段階"), english.getMessage());
 
     assertTrue(ScoringPolicies.isDecided(Mode.ENGINEER));
-    assertFalse(ScoringPolicies.isDecided(Mode.PRESSURE));
+    assertTrue(ScoringPolicies.isDecided(Mode.PRESSURE));
     assertFalse(ScoringPolicies.isDecided(Mode.ENGLISH));
+  }
+
+  @Test
+  @DisplayName("圧迫面接では一貫性を内訳で目立たせること")
+  void pressureEmphasisesConsistency() {
+    // 諏訪さんの条件（第7段階）:
+    //   「重みは下げますが、内訳表示では一貫性を目立たせてください。
+    //     押されて話が変わったことは、点数に反映されなくても本人に伝える価値があります」
+    ScoringPolicy pressure = ScoringPolicy.adoptedPressure();
+    assertTrue(pressure.isEmphasised(Axis.CONSISTENCY), "一貫性が強調されていない");
+    // 重みは抑えたまま。強調と重みは別のもの。
+    assertEquals(25, pressure.weights().of(Axis.CONSISTENCY));
+  }
+
+  @Test
+  @DisplayName("圧迫面接の一貫性の説明に、揺らぐことが残っていること")
+  void pressureKeepsTheReliabilityWarning() {
+    // 「この判定は揺らぎます」の注記も、そのまま残してください、という条件。
+    var state = Candidates.strong().run();
+    String why = new Scorer(ScoringPolicy.adoptedPressure().params())
+        .score(state).get(Axis.CONSISTENCY).why();
+    assertTrue(why.contains("揺らぎ"), "注記が消えている: " + why);
   }
 }

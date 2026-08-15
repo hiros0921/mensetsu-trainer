@@ -29,6 +29,7 @@ import java.util.List;
  * @param thresholds 5段階の境目
  * @param params 素点を出すときの境目
  * @param unmeasured 測れなかった軸の扱い
+ * @param emphasised 内訳表示で目立たせる軸。重みとは別の概念（下を参照）
  */
 public record ScoringPolicy(
     String version,
@@ -37,7 +38,34 @@ public record ScoringPolicy(
     Weights weights,
     GradeThresholds thresholds,
     AxisParams params,
-    UnmeasuredHandling unmeasured) {
+    UnmeasuredHandling unmeasured,
+    java.util.Set<Axis> emphasised) {
+
+  /**
+   * 重みと強調は別のもの。
+   *
+   * <h2>なぜ分けるか</h2>
+   *
+   * 重みは「合計点にどれだけ効かせるか」。強調は「本人に見せるか」。
+   * この2つは、ふつう同じ方向を向くが、必ずしも一致しない。
+   *
+   * <p>圧迫面接の一貫性がその例。押されて話が変わったことは、本人に伝える価値がある。
+   * しかし判定が揺らぐので、点数に大きく効かせると実力ではなく運で判定が動く。
+   *
+   * <p>諏訪さんの判断（第7段階）:
+   *
+   * <blockquote>「その軸が重要か」と「その軸に重みを置けるか」は、別の問題。
+   * 重要だからこそ、測れるようになるまで重みは下げる。ただし内訳表示では目立たせる。
+   * 点数に反映されなくても、本人に伝える価値がある。</blockquote>
+   */
+  public ScoringPolicy {
+    emphasised = emphasised == null ? java.util.Set.of() : java.util.Set.copyOf(emphasised);
+  }
+
+  /** 内訳表示で目立たせる軸か。 */
+  public boolean isEmphasised(Axis axis) {
+    return emphasised.contains(axis);
+  }
 
   /**
    * 素点から判定を出す。
@@ -141,7 +169,51 @@ public record ScoringPolicy(
         Weights.of(25, 15, 15, 35, 10),
         new GradeThresholds(90, 78, 62, 45),
         new AxisParams(40, 200, 5000),
-        UnmeasuredHandling.ZERO);
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
+  }
+
+  /**
+   * 圧迫面接モードの基準。<b>採用済み</b>（第7段階）。
+   *
+   * <p>案R3の重み・境目・帯に、内訳表示での一貫性の強調を足したもの。
+   *
+   * <h2>なぜ一貫性の重みを25に下げたか</h2>
+   *
+   * 諏訪さんは第5段階で「圧迫面接は一貫性が主軸」と述べられた。その見立ては変わっていない。
+   * 変わったのは、重みで表現するかどうか。
+   *
+   * <blockquote>「その軸が重要か」と「その軸に重みを置けるか」は、別の問題。
+   * 一貫性の判定は、同じ台本で71点と100点に分かれる。これは軸が悪いのではなく、
+   * 測定が不安定ということ。不安定な測定に大きな重みを置くと、実力ではなく運で判定が動く。
+   * 重要だからこそ、測れるようになるまで重みは下げる。</blockquote>
+   *
+   * <p>実測: 一貫性が1回ぶれると合計点が動く幅は、重み40なら11.6点、重み25なら7.3点。
+   * 11.6点は B と C の境目（58点）をまたぐ。
+   *
+   * <h2>ただし内訳では目立たせる</h2>
+   *
+   * 押されて話が変わったことは、点数に反映されなくても本人に伝える価値がある。
+   * だから {@code emphasised} に一貫性を入れてある。「この判定は揺らぎます」の注記も残す。
+   *
+   * <h2>判定の散らばり（実測・圧の設定は案P2）</h2>
+   *
+   * <pre>
+   *   圧に耐える          耐え切った    S 92点
+   *   押されると崩れる      押し切られた   C 54点
+   *   最初から中身が無い     押し切られた   D 28点
+   * </pre>
+   */
+  public static ScoringPolicy adoptedPressure() {
+    return new ScoringPolicy(
+        "pressure-v1",
+        "圧迫面接（採用）",
+        "詰まらずに答え続けられるか。一貫性は重要だが測定が不安定なので、重みは抑えて表示で見せる",
+        Weights.of(25, 10, 25, 15, 25),
+        new GradeThresholds(88, 74, 58, 42),
+        new AxisParams(30, 200, 6000),
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of(Axis.CONSISTENCY));
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -166,7 +238,8 @@ public record ScoringPolicy(
         Weights.of(25, 15, 15, 35, 10),
         new GradeThresholds(90, 78, 62, 45),
         new AxisParams(40, 200, 5000),
-        UnmeasuredHandling.REDISTRIBUTE);
+        UnmeasuredHandling.REDISTRIBUTE,
+        java.util.Set.of());
   }
 
   /**
@@ -183,7 +256,8 @@ public record ScoringPolicy(
         Weights.of(25, 20, 20, 25, 10),
         new GradeThresholds(85, 70, 55, 40),
         new AxisParams(40, 250, 8000),
-        UnmeasuredHandling.REDISTRIBUTE);
+        UnmeasuredHandling.REDISTRIBUTE,
+        java.util.Set.of());
   }
 
   /**
@@ -203,7 +277,8 @@ public record ScoringPolicy(
         Weights.of(30, 25, 20, 15, 10),
         new GradeThresholds(80, 65, 48, 32),
         new AxisParams(30, 300, 10000),
-        UnmeasuredHandling.ZERO);
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
   }
 
   /** 3案すべて。比較して選ぶために使う。 */
@@ -237,7 +312,8 @@ public record ScoringPolicy(
         Weights.of(20, 10, 40, 15, 15),
         new GradeThresholds(88, 74, 58, 42),
         new AxisParams(30, 200, 6000),
-        UnmeasuredHandling.ZERO);
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
   }
 
   /**
@@ -256,7 +332,8 @@ public record ScoringPolicy(
         Weights.of(30, 10, 30, 15, 15),
         new GradeThresholds(88, 74, 58, 42),
         new AxisParams(30, 200, 6000),
-        UnmeasuredHandling.ZERO);
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
   }
 
   /**
@@ -277,7 +354,8 @@ public record ScoringPolicy(
         Weights.of(25, 10, 25, 15, 25),
         new GradeThresholds(88, 74, 58, 42),
         new AxisParams(30, 200, 6000),
-        UnmeasuredHandling.ZERO);
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
   }
 
   /** 圧迫面接モードの3案。 */
@@ -307,6 +385,7 @@ public record ScoringPolicy(
         weights,
         thresholds,
         params,
-        handling);
+        handling,
+        emphasised);
   }
 }

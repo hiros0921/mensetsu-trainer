@@ -131,7 +131,7 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
 
       if (step.state().isFinished()) {
         Score score = service.scoreAndSave(session);
-        send(ws, result(score));
+        send(ws, result(score, session));
       } else {
         sendQuestion(ws, session);
       }
@@ -167,7 +167,7 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
    * <p>仕様書7章「この内訳表示が、アプリの価値の中心です。判定だけなら、既存のチャットで
    * 足ります」。だから why を必ず含める。
    */
-  private Map<String, Object> result(Score score) {
+  private Map<String, Object> result(Score score, InterviewService.Live session) {
     List<Map<String, Object>> axes = new ArrayList<>();
     for (Score.Contribution c : score.contributions()) {
       AxisScore raw = score.breakdown().get(c.axis());
@@ -178,6 +178,10 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
       m.put("points", Math.round(c.points() * 10) / 10.0);
       m.put("measured", c.measured());
       m.put("why", raw.why());
+      // 【重要】重みと強調は別のもの。
+      // 圧迫面接の一貫性は、重みを25に抑えたうえで表示では目立たせる。
+      // 押されて話が変わったことは、点数に反映されなくても本人に伝える価値がある。
+      m.put("emphasised", session.policy().isEmphasised(c.axis()));
       axes.add(m);
     }
     Map<String, Object> out = new LinkedHashMap<>();

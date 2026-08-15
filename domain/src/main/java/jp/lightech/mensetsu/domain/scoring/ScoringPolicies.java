@@ -28,10 +28,7 @@ public final class ScoringPolicies {
   public static ScoringPolicy forMode(Mode mode) {
     return switch (mode) {
       case ENGINEER -> ScoringPolicy.adoptedEngineer();
-      case PRESSURE ->
-          throw new IllegalStateException(
-              "圧迫面接の基準はまだ決まっていません（第7段階で案を出して決めます）。"
-                  + "一貫性が主軸になる見込みで、エンジニア面接の基準とは重みが違います");
+      case PRESSURE -> ScoringPolicy.adoptedPressure();
       case ENGLISH ->
           throw new IllegalStateException(
               "英語面接の基準はまだ決まっていません（第8段階で案を出して決めます）。"
@@ -41,6 +38,6 @@ public final class ScoringPolicies {
 
   /** そのモードの基準が決まっているか。画面で「まだ判定を出せません」と伝えるために使う。 */
   public static boolean isDecided(Mode mode) {
-    return mode == Mode.ENGINEER;
+    return mode != Mode.ENGLISH;
   }
 }

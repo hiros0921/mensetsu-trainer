@@ -16,6 +16,8 @@ import jp.lightech.mensetsu.domain.interview.InterviewState;
 import jp.lightech.mensetsu.domain.interview.InterviewerProfile;
 import jp.lightech.mensetsu.domain.interview.Mode;
 import jp.lightech.mensetsu.domain.interview.Phase;
+import jp.lightech.mensetsu.domain.interview.PressureConfigs;
+import jp.lightech.mensetsu.domain.interview.PressureModel;
 import jp.lightech.mensetsu.domain.interview.Question;
 import jp.lightech.mensetsu.domain.interview.Step;
 import jp.lightech.mensetsu.domain.port.EngineCall;
@@ -109,6 +111,10 @@ public class InterviewService {
     public InterviewState state() {
       return state;
     }
+
+    public ScoringPolicy policy() {
+      return policy;
+    }
   }
 
   /**
@@ -127,8 +133,10 @@ public class InterviewService {
         store.createSession(mode, profile.code(), engineKind);
 
     InterviewerEngine engine = engineFor(created.id(), sink);
-    Live session =
-        new Live(created.id(), created.publicId(), new InterviewMachine(engine), engine, policy);
+    // 【重要】モードの圧設定を使う。既定のままだと第3段階の暫定値で動く。
+    InterviewMachine machine =
+        new InterviewMachine(engine, new PressureModel(PressureConfigs.forMode(mode)));
+    Live session = new Live(created.id(), created.publicId(), machine, engine, policy);
     live.put(created.publicId(), session);
 
     Step step = session.machine.begin(mode, profile);

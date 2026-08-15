@@ -49,6 +49,11 @@
   .grade { font-size:2rem; font-weight:700; }
   .note { font-size:.8rem; color:var(--dim); }
   .warn { border:1px solid #d66; border-radius:8px; padding:10px 12px; margin-bottom:12px; }
+  /* 内訳で目立たせる軸（仕様書7章＋第7段階の判断）。
+     重みは抑えても、本人に伝える価値のある軸をここで見せる。 */
+  tr.emph td { background:#d6620f14; }
+  tr.emph td:first-child { font-weight:700; box-shadow: inset 3px 0 0 #d6620f; }
+  .emphnote { font-size:.78rem; color:var(--dim); margin-top:6px; }
 </style>
 </head>
 <body>
@@ -57,13 +62,12 @@
 
 <div id="setup">
   <p class="note">
-    モードを選んで始めてください。判定の基準が決まっているのはエンジニア面接だけです
-    （圧迫は第7段階、英語は第8段階で決めます）。
+    モードを選んで始めてください。英語面接の判定基準は第8段階で決めます。
   </p>
   <div class="bar">
     <select id="mode">
       <option value="ENGINEER">エンジニア面接</option>
-      <option value="PRESSURE">圧迫面接（基準は未決）</option>
+      <option value="PRESSURE">圧迫面接</option>
       <option value="ENGLISH">英語面接（基準は未決）</option>
     </select>
     <button id="start">面接を始める</button>
@@ -215,12 +219,16 @@ function enable(on) {
 }
 
 function showResult(m) {
-  const rows = m.axes.map((a) => a.measured
-    ? `<tr><td>${esc(a.label)}</td><td class="n">${a.raw}点</td>
-         <td class="n">×${a.weight}</td><td class="n">${a.points}点</td>
-         <td class="why">${esc(a.why)}</td></tr>`
-    : `<tr><td>${esc(a.label)}</td><td class="n" colspan="3">測定なし</td>
-         <td class="why">${esc(a.why)}</td></tr>`).join('');
+  const rows = m.axes.map((a) => {
+    const cls = a.emphasised ? ' class="emph"' : '';
+    return a.measured
+      ? `<tr${cls}><td>${esc(a.label)}</td><td class="n">${a.raw}点</td>
+           <td class="n">×${a.weight}</td><td class="n">${a.points}点</td>
+           <td class="why">${esc(a.why)}</td></tr>`
+      : `<tr${cls}><td>${esc(a.label)}</td><td class="n" colspan="3">測定なし</td>
+           <td class="why">${esc(a.why)}</td></tr>`;
+  }).join('');
+  const emphasised = m.axes.filter((a) => a.emphasised).map((a) => a.label);
 
   $('result').hidden = false;
   $('result').innerHTML = `
@@ -230,6 +238,9 @@ function showResult(m) {
       <tr><th>軸</th><th class="n">素点</th><th class="n">重み</th><th class="n">寄与</th><th>なぜその数字か</th></tr>
       ${rows}
     </table>
+    ${emphasised.length ? `<p class="emphnote">色を付けた「${emphasised.map(esc).join('・')}」は、
+       合計点への重みを抑えてあります。判定が揺らぐためです。
+       点数は小さくても、押されて話が変わったかどうかは見ておく価値があります。</p>` : ''}
     ${m.nextFocus ? `<p class="note">伸ばすと合計がいちばん上がるのは「${esc(m.nextFocus)}」（あと ${m.nextFocusGain}点ぶん）</p>` : ''}
     <p class="note">基準の版: ${esc(m.version)}</p>`;
   $('result').scrollIntoView();
