@@ -1,0 +1,37 @@
+# PostgreSQL だけをコンテナで動かす。
+#
+# アプリ自体はコンテナに入れない。Java は手元の JDK 21 で直接動かす。
+# 理由は、このプロジェクトが「面談で見せる」ものだから。
+# 画面を直して即座に確かめたい場面が多く、その都度イメージを焼くのは合わない。
+# 環境差異が問題になるのは DB だけなので、そこだけ揃える。
+#
+#   docker compose up -d
+#   ./gradlew :app:bootRun
+#
+# ポートは 55433。denpo_match が 55432 を使っているため、ずらしてある。
+# 両方を同時に立ち上げても衝突しない。
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: mendan_postgres
+    environment:
+      POSTGRES_DB: mendan
+      POSTGRES_USER: ${POSTGRES_USER:-mendan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mendan_dev_only}
+      # 日本語の回答をそのまま入れる。エンコーディングだけ明示する。
+      # denpo_match と違い、ここでは pg_trgm による日本語のあいまい検索を
+      # 使わないので、ロケールを C に倒す理由が無い。既定のままでよい。
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "${POSTGRES_PORT:-55433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mendan} -d mendan"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:

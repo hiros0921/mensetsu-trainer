@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: mendan-training
+
+  datasource:
+    # ポートは docker-compose.yml と揃える（既定 55433）。
+    url: jdbc:postgresql://localhost:${POSTGRES_PORT:55433}/mendan
+    username: ${POSTGRES_USER:mendan}
+    password: ${POSTGRES_PASSWORD:mendan_dev_only}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 【重要】ここを true にしないこと。
+    # 既存のテーブルがある DB に対して、履歴が無いまま V1 を「済んだこと」に
+    # してしまう。作り直したいときは docker compose down -v で消す。
+    baseline-on-migrate: false
+
+  thymeleaf:
+    cache: false   # 画面を直して即座に確かめる。開発用。
+
+server:
+  port: 8080
+
+mensetsu:
+  llm:
+    # 空なら CLAUDE 実装は使わない。第3段階まではこれでよい。
+    # 値は .env から渡す。application.yml には書かない（仕様書10章）。
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${MENSETSU_LLM_MODEL:claude-sonnet-5}
+    # 深掘りの表示が始まるまでの目標値（第1段階 Q5）。
+    # 超えたものは engine_calls から拾える。
+    first-token-target-ms: 3000
+
+logging:
+  level:
+    # 起動時に、どのマイグレーションが当たったかを見えるようにする。
+    org.flywaydb: INFO

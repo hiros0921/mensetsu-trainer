@@ -1,0 +1,21 @@
+# 【重要】APIキーを含む。絶対にコミットしない（仕様書10章）。
+.env
+.env.local
+
+# ビルド生成物
+build/
+.gradle/
+bin/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.zed/
+
+# OS
+.DS_Store
+
+# ログ
+*.log
