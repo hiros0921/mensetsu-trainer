@@ -17,6 +17,27 @@ plugins {
 //
 // .env をここで読んで、子プロセスの環境変数に渡す。Gradle も Spring も
 // .env を自動では読まない。値はログに出さない（仕様書10章）。
+// bootRun にも .env を読ませる。
+//
+// Gradle も Spring も .env を自動では読まない。読ませないと APIキーが渡らず、
+// 起動はするがスタブで動く。エラーが出ないので気づきにくい。
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+  doFirst {
+    val env = rootProject.file(".env")
+    if (env.exists()) {
+      env.readLines()
+        .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+        .forEach { line ->
+          val i = line.indexOf('=')
+          val key = line.substring(0, i).trim()
+          if (System.getenv(key) == null) {
+            environment(key, line.substring(i + 1).trim())
+          }
+        }
+    }
+  }
+}
+
 tasks.register<JavaExec>("llmcheck") {
   group = "verification"
   description = "本物の Claude API で面接を1回通し、初文字までの時間を測る（課金あり）"

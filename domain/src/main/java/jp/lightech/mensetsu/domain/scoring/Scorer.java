@@ -40,7 +40,7 @@ public final class Scorer {
     list.add(specificity(substantive));
     list.add(conciseness(substantive));
     list.add(consistency(answered));
-    list.add(depth(outcome));
+    list.add(depth(state, outcome));
     list.add(silence(state, outcome));
     return ScoreBreakdown.of(list);
   }
@@ -57,8 +57,14 @@ public final class Scorer {
    * <p>締めの挨拶に数字や固有名詞が入るはずがない。入れられない場面を分母に入れると、
    * 誰でも同じだけ点が下がる。全員が同じだけ下がる減点は、誰の練習の材料にもならない。
    *
-   * <p>逆質問（REVERSE）は残してある。「特にありません」は逃げではなく、
-   * 選択として実際に評価される場面だから。ここを外すかどうかは判断が分かれる。
+   * <h2>逆質問（REVERSE）は分母に入れる — 第5段階で確定</h2>
+   *
+   * 「特にありません」を逃げとみなさない立場もあるが、採らなかった。諏訪さんの判断:
+   *
+   * <blockquote>逆質問は面接で最も評価される場面の一つで、しかも準備でどうにでもなる部分。
+   * 練習アプリなら、その選択にコストがあることを見せるべき。</blockquote>
+   *
+   * <p>だから CLOSING だけを外す。挨拶に数字は入らないが、逆質問には準備が効く。
    */
   private static boolean asksAboutWork(Exchange e) {
     return e.phase() != jp.lightech.mensetsu.domain.interview.Phase.CLOSING;
@@ -171,21 +177,47 @@ public final class Scorer {
    * 「深く聞かれて答えられなかった人」と「そもそも聞かれなかった人」が同じ点になる。
    * まったく別のことを意味するので、分ける。
    */
-  private AxisScore depth(Outcome outcome) {
+  private AxisScore depth(InterviewState state, Outcome outcome) {
     List<TermResult> terms = outcome.terms();
-    if (terms.isEmpty()) {
+    var probe = state.probe();
+    // 【重要】掘りかけで終わった用語も数える。
+    //
+    // 実測で見つけた。PostgreSQL を3段、MySQL を2段掘られた面接で、深さが
+    // 「1件の技術について 3段中 1段」と出た。MySQL は PROBE の上限（5往復）で
+    // 打ち切られ、掘り終えていないので finished に入らない。
+    //
+    // 2段答えた事実が、どこにも残らないまま捨てられていた。上限で切れるかどうかは
+    // 面接の長さの都合で、本人の実力ではない。
+    //
+    // 分母は掘り終えたものが maxDepth、掘りかけは実際に投げた段数。
+    // こうすると「答え切れなかった」の減点は残しつつ、答えた事実も拾える。
+    boolean digging = probe.hasCurrent() && probe.askedDepth() > 0;
+
+    if (terms.isEmpty() && !digging) {
       return AxisScore.notMeasured(
           Axis.DEPTH, "掘る対象になる技術の話が出なかったため、測れませんでした");
     }
+
     int answered = terms.stream().mapToInt(TermResult::answeredDepth).sum();
     int asked = terms.stream().mapToInt(TermResult::maxDepth).sum();
+    int termCount = terms.size();
+    String pending = "";
+    if (digging) {
+      answered += probe.answeredDepth();
+      asked += probe.askedDepth();
+      termCount++;
+      pending =
+          "。うち「%s」は %d段目で打ち切り（%d段まで答えた）"
+              .formatted(probe.currentTerm(), probe.askedDepth(), probe.answeredDepth());
+    }
+
     int value = Math.round(answered * 100f / asked);
     long failed = terms.stream().filter(TermResult::failed).count();
     return AxisScore.of(
         Axis.DEPTH,
         value,
-        "%d件の技術について %d段中 %d段まで答えられました（答え切れなかったもの %d件）"
-            .formatted(terms.size(), asked, answered, failed));
+        "%d件の技術について %d段中 %d段まで答えられました（答え切れなかったもの %d件）%s"
+            .formatted(termCount, asked, answered, failed, pending));
   }
 
   // ── 沈黙 ──

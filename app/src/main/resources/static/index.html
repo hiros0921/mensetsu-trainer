@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MENSETSU — 面接シミュレーター</title>
+<!--
+  【重要】デザインに時間を使わない（仕様書8章）。
+  必要なのは、対話画面・フェーズ表示・圧ゲージ・結果画面だけ。
+  面接官の表情は第7段階、音声入力は第8段階で足す。
+-->
+<style>
+  :root { color-scheme: light dark; --line:#8884; --dim:#8888; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    margin: 0; padding: 16px; line-height: 1.7;
+    max-width: 760px; margin-inline: auto;
+  }
+  h1 { font-size: 1.1rem; margin: 0 0 12px; }
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+         border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-bottom:12px; }
+  .bar b { font-weight:600; }
+  .gauge { flex:1; min-width:120px; height:8px; background:#8882; border-radius:4px; overflow:hidden; }
+  .gauge > i { display:block; height:100%; width:20%; background:#d66; transition:width .4s; }
+  #log { border:1px solid var(--line); border-radius:8px; padding:12px; min-height:280px; }
+  .turn { margin-bottom:14px; }
+  .who { font-size:.78rem; color:var(--dim); }
+  .q { white-space:pre-wrap; }
+  .q.filler { color:var(--dim); font-style:italic; }
+  .a { white-space:pre-wrap; padding-left:12px; border-left:2px solid var(--line); }
+  .meta { font-size:.72rem; color:var(--dim); }
+  form { display:flex; gap:8px; margin-top:12px; }
+  textarea { flex:1; min-height:74px; padding:8px; font:inherit;
+             border:1px solid var(--line); border-radius:6px; background:transparent; color:inherit; }
+  button { padding:8px 16px; font:inherit; border-radius:6px; border:1px solid var(--line);
+           background:transparent; color:inherit; cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  table { border-collapse:collapse; width:100%; margin-top:8px; font-size:.9rem; }
+  td, th { border-bottom:1px solid var(--line); padding:5px 6px; text-align:left; vertical-align:top; }
+  td.n { text-align:right; white-space:nowrap; }
+  .why { font-size:.76rem; color:var(--dim); }
+  .grade { font-size:2rem; font-weight:700; }
+  .note { font-size:.8rem; color:var(--dim); }
+  .warn { border:1px solid #d66; border-radius:8px; padding:10px 12px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<h1>MENSETSU — 面接シミュレーター</h1>
+
+<div id="setup">
+  <p class="note">
+    モードを選んで始めてください。判定の基準が決まっているのはエンジニア面接だけです
+    （圧迫は第7段階、英語は第8段階で決めます）。
+  </p>
+  <div class="bar">
+    <select id="mode">
+      <option value="ENGINEER">エンジニア面接</option>
+      <option value="PRESSURE">圧迫面接（基準は未決）</option>
+      <option value="ENGLISH">英語面接（基準は未決）</option>
+    </select>
+    <button id="start">面接を始める</button>
+  </div>
+</div>
+
+<div id="live" hidden>
+  <div class="bar">
+    <span>フェーズ <b id="phase">—</b></span>
+    <span>圧</span>
+    <span class="gauge"><i id="pressure"></i></span>
+    <span id="pnum" class="meta">—</span>
+    <span id="engine" class="meta"></span>
+  </div>
+  <div id="log"></div>
+  <form id="form">
+    <textarea id="text" placeholder="回答を入力して Ctrl+Enter"></textarea>
+    <button id="send" type="submit">送信</button>
+  </form>
+  <p class="note">入力方式は記録として残ります。音声入力は第8段階で足します。</p>
+</div>
+
+<div id="result" hidden></div>
+
+<script>
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+let ws = null;
+let answeredAt = Date.now();   // 回答にかかった時間を測る起点
+let current = null;            // 生成中の発言の DOM
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws/interview`);
+  ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+  ws.onclose = () => append('meta', '（接続が切れました。RESULT に着いていなければ中断として記録されます）');
+  return new Promise((ok) => (ws.onopen = ok));
+}
+
+function handle(m) {
+  switch (m.type) {
+    case 'started':
+      $('setup').hidden = true;
+      $('live').hidden = false;
+      $('engine').textContent = m.engine === 'CLAUDE' ? '' : '（スタブで動いています。APIキーが未設定です）';
+      break;
+
+    case 'unavailable':
+      // 基準が決まっていないモード。理由をそのまま出す。
+      $('setup').insertAdjacentHTML('afterbegin', `<div class="warn">${esc(m.message)}</div>`);
+      break;
+
+    case 'filler':
+      // 相槌。LLM を呼んでいないので即座に届く。
+      addTurn('面接官', m.text, 'filler');
+      break;
+
+    case 'delta':
+      // 生成中の文字。届いたそばから足す。
+      if (!current) current = addTurn('面接官', '', '');
+      current.textContent += m.text;
+      break;
+
+    case 'question':
+      if (!current) current = addTurn('面接官', m.text, '');
+      else current.textContent = m.text;
+      if (m.depth > 0) {
+        current.insertAdjacentHTML('afterend',
+          `<div class="meta">${esc(m.topic)} ${m.depth}段目</div>`);
+      }
+      current = null;
+      setPhase(m.phase, m.pressure);
+      enable(true);
+      answeredAt = Date.now();
+      break;
+
+    case 'timing':
+      if (m.purpose === 'NEXT_QUESTION') {
+        append('meta', m.ok
+          ? `生成 初文字 ${m.firstTokenMs}ms・完了 ${m.totalMs}ms`
+          : `生成に失敗（相槌でつなぎました）: ${m.note}`);
+      }
+      break;
+
+    case 'result':
+      showResult(m);
+      break;
+
+    case 'error':
+      append('meta', `エラー: ${m.message}`);
+      enable(true);
+      break;
+  }
+}
+
+function setPhase(phase, pressure) {
+  $('phase').textContent = phase;
+  $('pressure').style.width = `${pressure}%`;
+  $('pnum').textContent = `${pressure}/100`;
+}
+
+function addTurn(who, text, cls) {
+  const wrap = document.createElement('div');
+  wrap.className = 'turn';
+  wrap.innerHTML = `<div class="who">${esc(who)}</div><div class="q ${cls}"></div>`;
+  const body = wrap.querySelector('.q');
+  body.textContent = text;
+  $('log').append(wrap);
+  wrap.scrollIntoView({ block: 'end' });
+  return body;
+}
+
+function append(cls, text) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = text;
+  $('log').append(d);
+  d.scrollIntoView({ block: 'end' });
+}
+
+function enable(on) {
+  $('send').disabled = !on;
+  $('text').disabled = !on;
+  if (on) $('text').focus();
+}
+
+function showResult(m) {
+  const rows = m.axes.map((a) => a.measured
+    ? `<tr><td>${esc(a.label)}</td><td class="n">${a.raw}点</td>
+         <td class="n">×${a.weight}</td><td class="n">${a.points}点</td>
+         <td class="why">${esc(a.why)}</td></tr>`
+    : `<tr><td>${esc(a.label)}</td><td class="n" colspan="3">測定なし</td>
+         <td class="why">${esc(a.why)}</td></tr>`).join('');
+
+  $('result').hidden = false;
+  $('result').innerHTML = `
+    <h1>結果</h1>
+    <p><span class="grade">${esc(m.grade)}</span> ${esc(m.meaning)} — 合計 ${m.total}点</p>
+    <table>
+      <tr><th>軸</th><th class="n">素点</th><th class="n">重み</th><th class="n">寄与</th><th>なぜその数字か</th></tr>
+      ${rows}
+    </table>
+    ${m.nextFocus ? `<p class="note">伸ばすと合計がいちばん上がるのは「${esc(m.nextFocus)}」（あと ${m.nextFocusGain}点ぶん）</p>` : ''}
+    <p class="note">基準の版: ${esc(m.version)}</p>`;
+  $('result').scrollIntoView();
+  enable(false);
+}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+$('start').onclick = async () => {
+  if (!ws || ws.readyState !== 1) await connect();
+  ws.send(JSON.stringify({ type: 'start', mode: $('mode').value }));
+};
+
+$('form').onsubmit = (e) => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text) return;
+  addTurn('あなた', text, '').className = 'a';
+  ws.send(JSON.stringify({
+    type: 'answer',
+    text,
+    input: 'TEXT',
+    elapsedMs: Date.now() - answeredAt,
+    silenceMs: 0,           // 沈黙の検出は第8段階（英語面接）で入れる
+  }));
+  $('text').value = '';
+  enable(false);
+};
+
+$('text').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('form').requestSubmit();
+});
+</script>
+</body>
+</html>
