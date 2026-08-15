@@ -28,3 +28,16 @@ dependencies {
   testImplementation("org.junit.jupiter:junit-jupiter-params")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+
+// 基準の案を、同じ面接に当てて比べる。
+//
+//   ./gradlew :domain:policycompare
+//
+// 案を文章で並べても選べない。同じ相手を各案で評価して、判定がどう変わるかを
+// 見て初めて選べる。第5段階で諏訪さんが基準を決めるための道具。
+tasks.register<JavaExec>("policycompare") {
+  group = "verification"
+  description = "スコアリングの案を同じ面接に当てて比べる（Spring も DB も LLM も使わない）"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.domain.scoring.PolicyCompare")
+}
