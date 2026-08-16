@@ -12,7 +12,7 @@ import java.util.Map;
  * これは「測った結果」であって「評価」ではない。同じ素点から、重みと閾値を変えれば
  * 違う判定が出る。基準を変えたときに過去の面接を再評価できるのは、この分離があるため。
  *
- * <p>合計と判定を作るのは {@link ScoringPolicy}。そちらの数値は諏訪さんが決める（仕様書7章）。
+ * <p>合計と判定を作るのは {@link ScoringPolicy}。そちらの数値は諏訪が決める（仕様書7章）。
  */
 public record ScoreBreakdown(Map<Axis, AxisScore> scores) {
 

@@ -54,7 +54,7 @@ public record InterviewerProfile(
    * 英語面接官。制限時間を持つ。
    *
    * <p>【重要】ここの値は「DBが読めないときの既定」。本番では
-   * interviewer_profiles から読む。諏訪さんが案T2に上げたくなったとき、
+   * interviewer_profiles から読む。諏訪が案T2に上げたくなったとき、
    * DB を1行 UPDATE すれば済むようにするため（第8段階の判断）。
    */
   public static InterviewerProfile englishStandard() {

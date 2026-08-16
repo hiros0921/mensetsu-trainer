@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /**
  * 採用された圧の設定（案P2）を固定する。
  *
- * <p>ここは値そのものをテストで固定する。諏訪さんが4案を比べて選んだもので、
+ * <p>ここは値そのものをテストで固定する。諏訪が4案を比べて選んだもので、
  * うっかり変わってはいけない。変えるときはこのテストを直すことになり、
  * そのとき「本当に変えてよいか」を考える機会になる。
  */
@@ -28,7 +28,7 @@ class AdoptedPressureTest {
   private static final String VAGUE = "モダンだからです。";
 
   @Test
-  @DisplayName("採用された値が、諏訪さんの選んだ案P2であること")
+  @DisplayName("採用された値が、諏訪の選んだ案P2であること")
   void valuesAreAsChosen() {
     assertEquals(12, adopted.riseVague());
     assertEquals(8, adopted.riseNoFirstPerson());
@@ -43,7 +43,7 @@ class AdoptedPressureTest {
   @Test
   @DisplayName("上げ幅が下げ幅の2倍以上あること（一度上がった空気は戻りにくい）")
   void risesMuchFasterThanItDrops() {
-    // 諏訪さんの判断: 「一度あやしいと思われたら、後の良い回答では完全に戻らない」。
+    // 諏訪の判断: 「一度あやしいと思われたら、後の良い回答では完全に戻らない」。
     int up = adopted.riseVague() + adopted.riseNoFirstPerson();
     int down = adopted.dropNumber() + adopted.dropProperNoun() + adopted.dropFirstPerson();
     assertTrue(up >= down * 2, "上げ幅 %d が下げ幅 %d の2倍に届かない".formatted(up, down));
@@ -52,7 +52,7 @@ class AdoptedPressureTest {
   @Test
   @DisplayName("「具体→曖昧（崩れる）」を見逃さないこと")
   void catchesTheCollapsePattern() {
-    // 諏訪さんが案P1を落とした理由。圧迫面接がまさに測りたい失敗。
+    // 諏訪が案P1を落とした理由。圧迫面接がまさに測りたい失敗。
     // 最初は良いことを言うのに、押されると崩れる人。
     List<String> collapse =
         List.of(CONCRETE, CONCRETE, CONCRETE, VAGUE, VAGUE, VAGUE, VAGUE, VAGUE);
@@ -72,7 +72,7 @@ class AdoptedPressureTest {
   @Test
   @DisplayName("ずっと具体的に答えれば耐え切れること（報われる）")
   void consistentlyConcreteSurvives() {
-    // 諏訪さんが案P3を落とした理由。「どれだけ良い回答をしても報われないと続かない」。
+    // 諏訪が案P3を落とした理由。「どれだけ良い回答をしても報われないと続かない」。
     Outcome o = run(List.of(CONCRETE)).result().orElseThrow();
     assertTrue(o.survivedPressure(), "具体的に答え続けたのに耐え切れていない");
     assertTrue(o.pressureFinal() < 25,
@@ -82,7 +82,7 @@ class AdoptedPressureTest {
   @Test
   @DisplayName("案P2で「好意的」に届くこと")
   void favorableIsReachable() {
-    // 【重要】諏訪さんからの確認事項。
+    // 【重要】諏訪からの確認事項。
     // 「案P2は圧が下がりにくいので、好意的（25未満）に届かない可能性がある。
     //   5枚すべてが実際に出るか、通しで確認してください」
     //

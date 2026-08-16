@@ -133,7 +133,7 @@ class AnswerClockTest {
   @Test
   @DisplayName("制限時間は面接官の設定から取ること（ハードコードしない）")
   void timingComesFromTheProfile() {
-    // 【重要】諏訪さんの指示（第8段階）:
+    // 【重要】諏訪の指示（第8段階）:
     //   「この3つの値を、設定として変更できる形にしておいてください。
     //     interviewer_profiles に持たせれば済むはずです。ハードコードしないこと」
     //
@@ -147,7 +147,7 @@ class AnswerClockTest {
   @Test
   @DisplayName("採用された既定が案T1であること")
   void adoptedDefaultIsT1() {
-    // 諏訪さんが選ばれた値。「実際のAI面接の体験を再現する」ため実物に近い設定。
+    // 諏訪が選んだ値。「実際のAI面接の体験を再現する」ため実物に近い設定。
     TimingRules t1 = TimingRulesRegistry.adoptedEnglishDefault();
     assertEquals(90_000, t1.answerLimitMs());
     assertEquals(8_000, t1.silenceCutoffMs());

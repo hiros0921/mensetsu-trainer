@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  * <h2>ここだけは値そのものをテストで固定する</h2>
  *
  * 他のテストでは値を固定していない。値は変わりうるものだから。
- * だがこの基準は、諏訪さんが3案を比べて選んだもの。うっかり変わってはいけない。
+ * だがこの基準は、諏訪が3案を比べて選んだもの。うっかり変わってはいけない。
  *
  * <p>変えるときは、このテストを直すことになる。そのとき「本当に変えてよいか」を
  * 考える機会になる。それがこのテストの役目。
@@ -28,7 +28,7 @@ class AdoptedPolicyTest {
   private final ScoringPolicy adopted = ScoringPolicy.adoptedEngineer();
 
   @Test
-  @DisplayName("採用された重みが、諏訪さんの選んだとおりであること")
+  @DisplayName("採用された重みが、諏訪の選んだとおりであること")
   void weightsAreAsChosen() {
     // 案Aの重み。深さを主軸に、揺らぐ一貫性は抑える。
     assertEquals(25, adopted.weights().of(Axis.SPECIFICITY));
@@ -63,7 +63,7 @@ class AdoptedPolicyTest {
   }
 
   @Test
-  @DisplayName("採用された境目が、諏訪さんの選んだとおりであること")
+  @DisplayName("採用された境目が、諏訪の選んだとおりであること")
   void thresholdsAreAsChosen() {
     assertEquals(90, adopted.thresholds().s());
     assertEquals(78, adopted.thresholds().a());
@@ -133,7 +133,7 @@ class AdoptedPolicyTest {
   @Test
   @DisplayName("英語面接に案E-2が入っていること")
   void englishUsesE2() {
-    // 諏訪さんの選択（第8段階）:
+    // 諏訪の選択（第8段階）:
     //   「② 案E-2 です。沈黙は慣れでしか直らないが、STARは準備で直るからです。
     //     練習アプリなので、直せる軸に重みを置くほうが価値が出ます」
     ScoringPolicy english = ScoringPolicies.forMode(Mode.ENGLISH);
@@ -214,7 +214,7 @@ class AdoptedPolicyTest {
   @Test
   @DisplayName("案E-1を採らなかった理由が、重みに残っていること")
   void silenceIsNotTheHeaviestAxis() {
-    // 諏訪さんが案E-1（沈黙35）を却下された理由:
+    // 諏訪が案E-1（沈黙35）を却下した理由:
     //   「テキスト入力だと沈黙が発生せず、35点が自動的に満点になる。
     //     実質65点満点の勝負になって、判定が壊れます」
     //
@@ -236,7 +236,7 @@ class AdoptedPolicyTest {
   @Test
   @DisplayName("圧迫面接では一貫性を内訳で目立たせること")
   void pressureEmphasisesConsistency() {
-    // 諏訪さんの条件（第7段階）:
+    // 諏訪の条件（第7段階）:
     //   「重みは下げますが、内訳表示では一貫性を目立たせてください。
     //     押されて話が変わったことは、点数に反映されなくても本人に伝える価値があります」
     ScoringPolicy pressure = ScoringPolicy.adoptedPressure();

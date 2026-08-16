@@ -18,7 +18,7 @@ package jp.lightech.mensetsu.domain.interview;
  * <h2>【重要】ここの数値は案です</h2>
  *
  * 圧の設定やスコアの重みと同じで、面接の難しさそのものを決める。第8段階で案を出し、
- * 諏訪さんに選んでいただく。
+ * 諏訪が選ぶ。
  *
  * @param answerLimitMs 1問あたりの回答制限時間。これを過ぎたら打ち切る
  * @param silenceCutoffMs 入力（発話）が止まってから、回答終了とみなすまでの時間

@@ -53,7 +53,7 @@ public final class PolicyCompare {
   private static void printProposals(List<ScoringPolicy> policies) {
     System.out.println();
     System.out.println("=".repeat(78));
-    System.out.println("  基準の案（いずれも未採用。諏訪さんが選ぶもの）");
+    System.out.println("  基準の案（いずれも未採用。諏訪が選ぶもの）");
     System.out.println("=".repeat(78));
     for (ScoringPolicy p : policies) {
       System.out.println();

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <h2>【重要】中断した面接は混ぜない（第1段階 Q4）</h2>
  *
- * 諏訪さんの指示:
+ * 諏訪の指示:
  *
  * <blockquote>未完了のまま RESULT に到達していないセッションが、履歴やスコア集計に
  * 混ざらないようにしてください。</blockquote>

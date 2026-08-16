@@ -34,7 +34,7 @@ dependencies {
 //   ./gradlew :domain:policycompare
 //
 // 案を文章で並べても選べない。同じ相手を各案で評価して、判定がどう変わるかを
-// 見て初めて選べる。第5段階で諏訪さんが基準を決めるための道具。
+// 見て初めて選べる。第5段階で諏訪が基準を決めるための道具。
 tasks.register<JavaExec>("policycompare") {
   group = "verification"
   description = "スコアリングの案を同じ面接に当てて比べる（Spring も DB も LLM も使わない）"
@@ -47,7 +47,7 @@ tasks.register<JavaExec>("policycompare") {
 //   ./gradlew :domain:pressuresweep
 //
 // 幅をいくつにすべきかは、文章で考えても決まらない。回答のパターンごとに
-// 圧がどう動くかを並べて初めて選べる。第7段階で諏訪さんが決めるための道具。
+// 圧がどう動くかを並べて初めて選べる。第7段階で諏訪が決めるための道具。
 tasks.register<JavaExec>("pressuresweep") {
   group = "verification"
   description = "圧の設定案を同じ回答パターンに当てて比べる"
