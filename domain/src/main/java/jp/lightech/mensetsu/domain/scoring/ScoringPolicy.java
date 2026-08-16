@@ -30,6 +30,7 @@ import java.util.List;
  * @param params 素点を出すときの境目
  * @param unmeasured 測れなかった軸の扱い
  * @param emphasised 内訳表示で目立たせる軸。重みとは別の概念（下を参照）
+ * @param emphasisNote なぜその軸を目立たせるのか。画面にそのまま出す
  */
 public record ScoringPolicy(
     String version,
@@ -39,7 +40,28 @@ public record ScoringPolicy(
     GradeThresholds thresholds,
     AxisParams params,
     UnmeasuredHandling unmeasured,
-    java.util.Set<Axis> emphasised) {
+    java.util.Set<Axis> emphasised,
+    String emphasisNote) {
+
+  /**
+   * 強調の理由を書かない場合。案の比較で使う。
+   *
+   * <p>【重要】理由は基準ごとに違う。ここを画面に固定文で書いてはいけない。
+   * 一度そうなっていた。圧迫面接の「重みを抑えたが見せる価値がある」という文が、
+   * 英語面接の結果画面にもそのまま出ていた。英語面接で目立たせている簡潔さは、
+   * 重みが最大（35）の軸で、抑えてなどいない。画面には正反対のことが書かれていた。
+   */
+  public ScoringPolicy(
+      String version,
+      String label,
+      String note,
+      Weights weights,
+      GradeThresholds thresholds,
+      AxisParams params,
+      UnmeasuredHandling unmeasured,
+      java.util.Set<Axis> emphasised) {
+    this(version, label, note, weights, thresholds, params, unmeasured, emphasised, "");
+  }
 
   /**
    * 重みと強調は別のもの。
@@ -60,6 +82,7 @@ public record ScoringPolicy(
    */
   public ScoringPolicy {
     emphasised = emphasised == null ? java.util.Set.of() : java.util.Set.copyOf(emphasised);
+    emphasisNote = emphasisNote == null ? "" : emphasisNote;
   }
 
   /** 内訳表示で目立たせる軸か。 */
@@ -94,7 +117,13 @@ public record ScoringPolicy(
     for (Axis a : Axis.values()) {
       AxisScore s = breakdown.get(a);
       if (!s.measured()) {
-        contributions.add(new Score.Contribution(a, 0, 0, 0.0, false));
+        // 【重要】0点として数えるときは、重みをそのまま見せる。
+        // ここを 0 にすると、画面には「×0・0.0点」と出て、その軸が
+        // 勘定から外れたように見える。実際は満点ぶんを落としている。
+        // 諏訪さんの判断（第5段階③）は「その選択にコストがあることを見せるべき」。
+        // 配り直すときは、重みが本当に他へ移っているので 0 でよい。
+        int shown = unmeasured == UnmeasuredHandling.ZERO ? weights.of(a) : 0;
+        contributions.add(new Score.Contribution(a, 0, shown, 0.0, false));
         continue;
       }
       // 配り直すときは、測れた軸の重みを合計100になるよう引き伸ばす。
@@ -220,7 +249,73 @@ public record ScoringPolicy(
         new GradeThresholds(88, 74, 58, 42),
         new AxisParams(30, 200, 6000),
         UnmeasuredHandling.ZERO,
-        java.util.Set.of(Axis.CONSISTENCY));
+        java.util.Set.of(Axis.CONSISTENCY),
+        // 諏訪さんの条件（第7段階）:
+        //   「重みは下げますが、内訳表示では一貫性を目立たせてください。
+        //     押されて話が変わったことは、点数に反映されなくても本人に伝える価値があります」
+        // 【重要】「重みを抑えてあります」とは書かない。実際の重みは25で、
+        // 具体性・沈黙と並ぶ最大タイ。画面の数字を見た人が矛盾に気づく。
+        // 抑えたのは案（案R1は40）に対してであって、表の中では低くない。
+        "本来ならもっと重く見たい軸ですが、LLM の判定が揺らぐため 25 に留めてあります。"
+            + "押されて話が変わったかどうかは、点数の大小とは別に見ておく価値があります。");
+  }
+
+  /**
+   * 英語面接モードの基準。<b>採用済み</b>（第8段階）。
+   *
+   * <p>案E-2。簡潔さ（語数＋STAR構造）を最も重く見る。
+   *
+   * <h2>案E-1（沈黙35）を落とした理由</h2>
+   *
+   * <blockquote>テキスト入力だと沈黙が発生せず、35点が自動的に満点になる。
+   * 実質65点満点の勝負になって、判定が壊れる。音声入力は Chrome と Edge でしか
+   * 動かないので、テキストで受ける人は必ず出る。</blockquote>
+   *
+   * <h2>案E-3（バランス）ではなく案E-2を採った理由</h2>
+   *
+   * <blockquote>沈黙は慣れでしか直らないが、STARは準備で直る。
+   * 練習アプリなので、直せる軸に重みを置くほうが価値が出る。</blockquote>
+   *
+   * <h2>3モードを貫く一つの方針</h2>
+   *
+   * 諏訪さんの整理（第8段階）:
+   *
+   * <blockquote>この判断は前2モードと一貫している。エンジニア面接と圧迫面接では
+   * 「揺らぐ軸に重みを置かない」だった。今回は「入力方式で変わる軸に重みを置かない」。
+   * 測定が不安定な軸は、重要でも重みを下げるという同じ方針。</blockquote>
+   *
+   * <h2>それでも残る不公平は、隠さずに出す</h2>
+   *
+   * 沈黙25は残るので、テキストで落ち着いて書く人が有利になる構造は消えない。
+   * そこは作り込まず、明示で対処する（諏訪さんの指示）:
+   *
+   * <ul>
+   *   <li>結果画面に、音声入力かテキスト入力かを表示する
+   *   <li>テキスト入力だった場合、内訳の沈黙欄に注記を出す
+   *   <li>開始画面に「音声入力での受験を推奨」と出す
+   * </ul>
+   *
+   * <p>STARで「観察していない」と「無かった」を型で分けたのと同じ考え方。
+   * 測っていない条件を隠さない。
+   */
+  public static ScoringPolicy adoptedEnglish() {
+    return new ScoringPolicy(
+        "english-v1",
+        "英語面接（採用）",
+        "語数とSTAR構造を最重視。沈黙は入力方式で変わるので重みを抑える",
+        Weights.of(20, 35, 10, 10, 25),
+        new GradeThresholds(86, 72, 56, 40),
+        AxisParams.words(40, 150, 4000),
+        UnmeasuredHandling.ZERO,
+        // STAR は準備で身に付く部分なので、内訳で目立たせて次に何を足すかを伝える。
+        java.util.Set.of(Axis.CONCISENESS),
+        // 【重要】圧迫面接とは強調の理由が逆。こちらは重みが最大の軸を目立たせている。
+        // 諏訪さんの選択理由（第8段階）:
+        //   「沈黙は慣れでしか直らないが、STARは準備で直るからです。
+        //     練習アプリなので、直せる軸に重みを置くほうが価値が出ます」
+        "この面接で最も重く見ている軸です。"
+            + "STAR（状況・課題・行動・結果）の型は準備で身に付くので、"
+            + "次に練習して効果が出るのはここです。");
   }
 
   // ══════════════════════════════════════════════════════════════════

@@ -212,6 +212,11 @@ public final class InterviewMachine {
     // 耐え切ったか（仕様書4-2 の勝ち）。通ったうえで、押し切られなかった場合。
     boolean survived = enteredPressure && !broken;
 
+    // 入力方式の内訳。結果画面に出す（第8段階）。
+    // 沈黙の軸は入力方式で意味が変わるので、どちらで受けたかを隠さない。
+    int voice =
+        (int) s.history().stream().filter(e -> e.answer().input() == InputMethod.VOICE).count();
+
     return new Outcome(
         s.turnNo(),
         s.pressurePeak(),
@@ -222,6 +227,8 @@ public final class InterviewMachine {
         survived,
         broken,
         silent,
-        silenceMs);
+        silenceMs,
+        voice,
+        s.history().size() - voice);
   }
 }

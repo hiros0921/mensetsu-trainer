@@ -361,8 +361,43 @@ public final class Scorer {
     return AxisScore.of(
         Axis.SILENCE,
         value,
-        "%d回中、何も言えなかったのが %d回、%.1f秒を超えて詰まったのが %d回"
+        "%d回中、何も言えなかったのが %d回、%.1f秒を超えて詰まったのが %d回%s"
             .formatted(turns, outcome.silentAnswers(),
-                params.silenceToleranceMs() / 1000.0, overTolerance));
+                params.silenceToleranceMs() / 1000.0, overTolerance,
+                inputMethodNote(state)));
+  }
+
+  /**
+   * 入力方式の注記（第8段階・諏訪さんの指示）。
+   *
+   * <h2>測っていない条件を隠さない</h2>
+   *
+   * 沈黙の軸は、音声入力とテキスト入力で意味が変わる。話しながら詰まるのと、
+   * 落ち着いて書くのでは、出てくる沈黙の量がまったく違う。
+   *
+   * <p>そこは作り込まず、明示で対処する。STARで「観察していない」と「無かった」を
+   * 型で分けたのと同じ考え方。
+   *
+   * <blockquote>案E-2でも、沈黙25は残る。テキストで落ち着いて書く人が有利になる構造は
+   * 消えない。そこは作り込まず、明示で対処してください。</blockquote>
+   */
+  private static String inputMethodNote(InterviewState state) {
+    long voice =
+        state.history().stream()
+            .filter(e -> e.answer().input() == jp.lightech.mensetsu.domain.interview.InputMethod.VOICE)
+            .count();
+    int turns = state.history().size();
+    if (turns == 0) {
+      return "";
+    }
+    if (voice == turns) {
+      return "。すべて音声入力です";
+    }
+    if (voice == 0) {
+      return "。すべてテキスト入力です。落ち着いて書けるぶん、"
+          + "音声で受けた場合よりこの点は高く出ます";
+    }
+    return "。音声 %d回・テキスト %d回。テキストの回は、この点が高く出やすくなっています"
+        .formatted(voice, turns - voice);
   }
 }

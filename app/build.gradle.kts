@@ -66,6 +66,22 @@ tasks.register<JavaExec>("llmcheck") {
   }
 }
 
+// 起動中のアプリに WebSocket でつないで、面接を最後まで通す。
+//
+//   ./gradlew :app:bootRun                        （別の端末で先に起動しておく）
+//   ./gradlew :app:webrun                         英語・音声入力
+//   ./gradlew :app:webrun --args="ENGLISH TEXT"   英語・テキスト入力
+//   ./gradlew :app:webrun --args="ENGINEER"       エンジニア面接
+//
+// 制限時間と沈黙の打ち切りはサーバー側の判断なので、画面を手で操作しても確かめにくい。
+// 「8秒黙る」を毎回同じ長さで再現するために、ここから流す。課金あり。
+tasks.register<JavaExec>("webrun") {
+  group = "verification"
+  description = "面接を WebSocket で通す。打ち切りと入力方式の表示まで見る（課金あり）"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.app.WebRun")
+}
+
 dependencies {
   implementation(project(":domain"))
 

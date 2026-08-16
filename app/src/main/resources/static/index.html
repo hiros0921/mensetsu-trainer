@@ -69,14 +69,15 @@
 
 <div id="setup">
   <p class="note">
-    モードを選んで始めてください。英語面接は制限時間つきで、音声入力が使えます
-    （Chrome / Edge。非対応ならテキストに切り替わります）。
+    モードを選んで始めてください。<br>
+    <b>英語面接は音声入力での受験を推奨します。</b>
+    沈黙の測り方が入力方式で変わるためです（Chrome / Edge。非対応ならテキストに切り替わります）。
   </p>
   <div class="bar">
     <select id="mode">
       <option value="ENGINEER">エンジニア面接</option>
       <option value="PRESSURE">圧迫面接</option>
-      <option value="ENGLISH">英語面接（基準は仮）</option>
+      <option value="ENGLISH">英語面接（音声入力を推奨）</option>
     </select>
     <button id="start">面接を始める</button>
   </div>
@@ -120,6 +121,8 @@ let ws = null;
 let answeredAt = Date.now();   // 回答にかかった時間を測る起点
 let current = null;            // 生成中の発言の DOM
 let inputMethod = 'TEXT';      // 記録として残すだけ。進行の判断には使わない
+// この問に、まだ答えていないか。打ち切りが遅れて届いたときの二重送信を防ぐ。
+let awaitingAnswer = false;
 let recognition = null;        // Web Speech API。非対応なら null のまま
 let listening = false;
 
@@ -152,6 +155,8 @@ function handle(m) {
 
     case 'cutoff':
       // サーバーが打ち切りを決めた。今ある文字をそのまま送る。
+      // すでに送ってあるなら無視する。遅れて届いた打ち切りで二重に送らないため。
+      if (!awaitingAnswer) break;
       append('cut', `— ${m.reason}`);
       stopListening();
       submitAnswer(true);
@@ -185,6 +190,7 @@ function handle(m) {
       setFace(m.face, m.faceLabel);
       showTimer(m.limitMs, 0);
       enable(true);
+      awaitingAnswer = true;
       answeredAt = Date.now();
       break;
 
@@ -356,14 +362,14 @@ function showResult(m) {
   $('result').hidden = false;
   $('result').innerHTML = `
     <h1>結果</h1>
-    <p><span class="grade">${esc(m.grade)}</span> ${esc(m.meaning)} — 合計 ${m.total}点</p>
+    <p><span class="grade">${esc(m.grade)}</span> ${esc(m.meaning)} — 合計 ${m.total}点
+       ${m.inputMethod ? `<span class="note">／ ${esc(m.inputMethod)}で受験</span>` : ''}</p>
     <table>
       <tr><th>軸</th><th class="n">素点</th><th class="n">重み</th><th class="n">寄与</th><th>なぜその数字か</th></tr>
       ${rows}
     </table>
-    ${emphasised.length ? `<p class="emphnote">色を付けた「${emphasised.map(esc).join('・')}」は、
-       合計点への重みを抑えてあります。判定が揺らぐためです。
-       点数は小さくても、押されて話が変わったかどうかは見ておく価値があります。</p>` : ''}
+    ${emphasised.length && m.emphasisNote ? `<p class="emphnote">色を付けた「${emphasised.map(esc).join('・')}」について。
+       ${esc(m.emphasisNote)}</p>` : ''}
     ${m.nextFocus ? `<p class="note">伸ばすと合計がいちばん上がるのは「${esc(m.nextFocus)}」（あと ${m.nextFocusGain}点ぶん）</p>` : ''}
     <p class="note">基準の版: ${esc(m.version)}</p>`;
   $('result').scrollIntoView();
@@ -379,9 +385,12 @@ $('start').onclick = async () => {
 };
 
 function submitAnswer(timedOut) {
+  // この問には答え済み。二度送らない。
+  if (!awaitingAnswer) return;
   const text = $('text').value.trim();
   // 打ち切りのときは、空でも送る。無言だったことを記録する必要がある。
   if (!text && !timedOut) return;
+  awaitingAnswer = false;
   stopListening();
   addTurn('あなた', text || '(無言)', '').className = 'a';
   ws.send(JSON.stringify({

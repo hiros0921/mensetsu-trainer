@@ -122,19 +122,68 @@ class AnswerClockTest {
   }
 
   @Test
-  @DisplayName("時間を測るのは英語面接だけであること")
+  @DisplayName("時間を測るのは英語面接官だけであること")
   void onlyEnglishIsTimed() {
     // エンジニア面接で90秒の制限をかけると、技術選定の説明が途中で切れる。
-    assertTrue(TimingRulesRegistry.forMode(Mode.ENGLISH) != null);
-    assertEquals(null, TimingRulesRegistry.forMode(Mode.ENGINEER));
-    assertEquals(null, TimingRulesRegistry.forMode(Mode.PRESSURE));
+    assertTrue(InterviewerProfile.englishStandard().isTimed());
+    assertFalse(InterviewerProfile.engineerStandard().isTimed());
+    assertFalse(InterviewerProfile.pressureHard().isTimed());
   }
 
   @Test
-  @DisplayName("英語面接の設定が、まだ決まっていないと分かること")
-  void englishTimingIsStillProvisional() {
-    assertFalse(TimingRulesRegistry.isDecided(Mode.ENGLISH));
-    assertTrue(TimingRulesRegistry.isDecided(Mode.ENGINEER));
+  @DisplayName("制限時間は面接官の設定から取ること（ハードコードしない）")
+  void timingComesFromTheProfile() {
+    // 【重要】諏訪さんの指示（第8段階）:
+    //   「この3つの値を、設定として変更できる形にしておいてください。
+    //     interviewer_profiles に持たせれば済むはずです。ハードコードしないこと」
+    //
+    // 本番では DB から読む。ここで確かめるのは「面接官が持っている」という構造。
+    InterviewerProfile custom =
+        new InterviewerProfile("custom", "厳しめ", 20, 2, 0, TimingRules.proposalT2());
+    assertEquals(TimingRules.proposalT2(), TimingRulesRegistry.forProfile(custom));
+    assertEquals(null, TimingRulesRegistry.forProfile(InterviewerProfile.engineerStandard()));
+  }
+
+  @Test
+  @DisplayName("採用された既定が案T1であること")
+  void adoptedDefaultIsT1() {
+    // 諏訪さんが選ばれた値。「実際のAI面接の体験を再現する」ため実物に近い設定。
+    TimingRules t1 = TimingRulesRegistry.adoptedEnglishDefault();
+    assertEquals(90_000, t1.answerLimitMs());
+    assertEquals(8_000, t1.silenceCutoffMs());
+    assertEquals(3_000, t1.graceMs());
+    assertEquals(t1, InterviewerProfile.englishStandard().timing());
+  }
+
+  @Nested
+  @DisplayName("測るだけの時計")
+  class MeasureOnly {
+
+    @Test
+    @DisplayName("打ち切らないこと")
+    void neverCuts() {
+      // エンジニア面接で90秒の制限をかけると、技術選定の説明が途中で切れる。
+      AnswerClock c = AnswerClock.measuring(rules, T0).onInput(T0 + 1_000);
+      assertFalse(c.cutoff(T0 + 600_000).shouldCut(), "10分経っても打ち切ってはいけない");
+    }
+
+    @Test
+    @DisplayName("それでも沈黙は測ること")
+    void stillMeasuresSilence() {
+      // 【重要】ここが 0 のままだと、沈黙の軸が「測れなかった」になる。
+      // 測れない軸は0点として数えるので、圧迫面接は重み25を必ず落とす。
+      // 打ち切らないことと、測らないことは別。
+      AnswerClock c = AnswerClock.measuring(rules, T0).onInput(T0 + 3_000);
+      assertEquals(9_000, c.silenceMs(T0 + 12_000));
+      assertEquals(12_000, c.elapsedMs(T0 + 12_000));
+    }
+
+    @Test
+    @DisplayName("残り時間を出さないこと")
+    void showsNoTimer() {
+      // 画面は -1 を見てタイマーを出さない。
+      assertEquals(-1, AnswerClock.measuring(rules, T0).remainingMs(T0 + 1_000));
+    }
   }
 
   @Test

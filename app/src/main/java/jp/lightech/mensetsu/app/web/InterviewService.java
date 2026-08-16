@@ -93,6 +93,7 @@ public class InterviewService {
     final InterviewMachine machine;
     final InterviewerEngine engine;
     final ScoringPolicy policy;
+    final InterviewerProfile profile;
     InterviewState state;
     long pendingTurnId;
     int turnNo;
@@ -101,12 +102,13 @@ public class InterviewService {
     volatile AnswerClock clock;
 
     Live(long dbId, UUID publicId, InterviewMachine machine, InterviewerEngine engine,
-        ScoringPolicy policy) {
+        ScoringPolicy policy, InterviewerProfile profile) {
       this.dbId = dbId;
       this.publicId = publicId;
       this.machine = machine;
       this.engine = engine;
       this.policy = policy;
+      this.profile = profile;
     }
 
     public UUID publicId() {
@@ -141,7 +143,9 @@ public class InterviewService {
     // 別モードの基準を黙って流用しない（ScoringPolicies を参照）。
     ScoringPolicy policy = ScoringPolicies.forMode(mode);
 
-    InterviewerProfile profile = profileFor(mode);
+    // 【重要】DB を正にする。コードの既定値は、DB が読めないときの落とし所。
+    InterviewerProfile fallback = profileFor(mode);
+    InterviewerProfile profile = store.findProfile(fallback.code()).orElse(fallback);
     String engineKind = llmAvailable ? "CLAUDE" : "STUB";
     SessionStore.Created created =
         store.createSession(mode, profile.code(), engineKind);
@@ -150,7 +154,7 @@ public class InterviewService {
     // 【重要】モードの圧設定を使う。既定のままだと第3段階の暫定値で動く。
     InterviewMachine machine =
         new InterviewMachine(engine, new PressureModel(PressureConfigs.forMode(mode)));
-    Live session = new Live(created.id(), created.publicId(), machine, engine, policy);
+    Live session = new Live(created.id(), created.publicId(), machine, engine, policy, profile);
     live.put(created.publicId(), session);
 
     Step step = session.machine.begin(mode, profile);
@@ -279,9 +283,14 @@ public class InterviewService {
     session.turnNo++;
     session.pendingTurnId =
         store.recordQuestion(session.dbId, session.turnNo, q, session.state.phase().name());
-    // 【重要】質問を出した瞬間から測る。時間を測らないモードでは null のまま。
-    TimingRules rules = TimingRulesRegistry.forMode(session.state.mode());
-    session.clock = rules == null ? null : AnswerClock.started(rules, System.currentTimeMillis());
+    // 【重要】質問を出した瞬間から測る。どのモードでも測る。
+    // 制限時間を持つ面接官のときだけ、打ち切りまでする。
+    long now = System.currentTimeMillis();
+    TimingRules rules = TimingRulesRegistry.forProfile(session.profile);
+    session.clock =
+        rules == null
+            ? AnswerClock.measuring(TimingRulesRegistry.measurementOnly(), now)
+            : AnswerClock.started(rules, now);
   }
 
   /**
@@ -295,6 +304,27 @@ public class InterviewService {
     if (c != null) {
       session.clock = c.onInput(System.currentTimeMillis());
     }
+  }
+
+  /**
+   * 回答を受け取ったので、この問の計測を終える。
+   *
+   * <p>【重要】ここを止めないと、回答を送ったあとも見張りが動き続ける。
+   * 深掘りの生成に数秒かかるあいだ、入力は当然止まっているので、
+   * 「8秒のあいだ入力が止まった」と判定され、送信済みの問に対して
+   * 打ち切りが飛ぶ。画面は打ち切りを受けると今ある文字を送るので、
+   * 同じ問に二度目の回答を送ることになる。
+   *
+   * <p>実測で見つけた。通しの記録に、回答のあとで打ち切りが2回出ていた。
+   * 画面上は次の質問が出るので、手で操作していると気づけない。
+   */
+  public void stopClock(Live session) {
+    session.clock = null;
+  }
+
+  /** まだこの問の時間を測っているか。見張りを続けるかの判断に使う。 */
+  public boolean isTiming(Live session) {
+    return session.clock != null;
   }
 
   /** 今、打ち切るべきか。時間を測らないモードでは常に「打ち切らない」。 */

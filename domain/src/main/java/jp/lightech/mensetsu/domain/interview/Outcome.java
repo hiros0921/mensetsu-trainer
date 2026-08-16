@@ -27,6 +27,8 @@ import java.util.List;
  * @param brokenByPressure 押し切られたか。
  * @param silentAnswers 何も言えなかった回数。
  * @param totalSilenceMs 詰まっていた時間の合計。
+ * @param voiceAnswers 音声で答えた回数。結果画面に出す（第8段階）。
+ * @param textAnswers テキストで答えた回数。
  */
 public record Outcome(
     int turnCount,
@@ -38,7 +40,23 @@ public record Outcome(
     boolean survivedPressure,
     boolean brokenByPressure,
     int silentAnswers,
-    int totalSilenceMs) {
+    int totalSilenceMs,
+    int voiceAnswers,
+    int textAnswers) {
+
+  /** 入力方式の内訳を人が読む形で。結果画面に出す。 */
+  public String inputMethodSummary() {
+    if (voiceAnswers + textAnswers == 0) {
+      return "";
+    }
+    if (textAnswers == 0) {
+      return "音声入力";
+    }
+    if (voiceAnswers == 0) {
+      return "テキスト入力";
+    }
+    return "音声 %d回・テキスト %d回".formatted(voiceAnswers, textAnswers);
+  }
 
   public Outcome {
     terms = terms == null ? List.of() : List.copyOf(terms);

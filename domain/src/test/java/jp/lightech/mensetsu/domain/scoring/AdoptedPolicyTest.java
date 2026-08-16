@@ -131,18 +131,106 @@ class AdoptedPolicyTest {
   }
 
   @Test
-  @DisplayName("英語面接は動くが、基準が仮であると分かること")
-  void englishRunsButIsStillProvisional() {
-    // 第8段階で、音声入力と打ち切りを実際に動かすために仮の基準を入れた。
-    // 【重要】動くことと、決まっていることは違う。
-    // version から仮であることが分かるようにしてある（採用済みなら english-v1 になる）。
+  @DisplayName("英語面接に案E-2が入っていること")
+  void englishUsesE2() {
+    // 諏訪さんの選択（第8段階）:
+    //   「② 案E-2 です。沈黙は慣れでしか直らないが、STARは準備で直るからです。
+    //     練習アプリなので、直せる軸に重みを置くほうが価値が出ます」
     ScoringPolicy english = ScoringPolicies.forMode(Mode.ENGLISH);
-    assertTrue(english.version().startsWith("english-e"),
-        "仮の基準だと分からない version: " + english.version());
+    assertEquals("english-v1", english.version());
+    assertEquals(ScoringPolicy.proposalEn2().weights(), english.weights());
+    assertTrue(ScoringPolicies.isDecided(Mode.ENGLISH));
 
-    assertTrue(ScoringPolicies.isDecided(Mode.ENGINEER));
-    assertTrue(ScoringPolicies.isDecided(Mode.PRESSURE));
-    assertFalse(ScoringPolicies.isDecided(Mode.ENGLISH), "英語面接が決定済みになっている");
+    // 簡潔さ（STAR構造）が最大の重み。直せる軸に重みを置く。
+    assertEquals(35, english.weights().of(Axis.CONCISENESS));
+    assertTrue(
+        english.weights().of(Axis.CONCISENESS) > english.weights().of(Axis.SILENCE),
+        "STARより沈黙のほうが重い");
+  }
+
+  @Test
+  @DisplayName("測れなかった軸でも、落とした重みが見えること")
+  void unmeasuredAxisStillShowsItsWeight() {
+    // 【重要】0点として数えるなら、いくらぶん落としたかを見せる。
+    // 実測で見つけた: 画面に「沈黙 ×0 0.0点（測れず）」と出ていた。
+    // 勘定から外れたように見えるが、実際は25点ぶんを落としている。
+    ScoringPolicy p = ScoringPolicy.adoptedPressure();
+    ScoreBreakdown b =
+        ScoreBreakdown.of(
+            java.util.List.of(
+                AxisScore.of(Axis.SPECIFICITY, 80, ""),
+                AxisScore.of(Axis.CONCISENESS, 80, ""),
+                AxisScore.of(Axis.CONSISTENCY, 80, ""),
+                AxisScore.of(Axis.DEPTH, 80, ""),
+                AxisScore.notMeasured(Axis.SILENCE, "時間が記録されていないため")));
+    Score score = p.evaluate(b);
+    Score.Contribution silence =
+        score.contributions().stream().filter(c -> c.axis() == Axis.SILENCE).findFirst()
+            .orElseThrow();
+
+    assertFalse(silence.measured());
+    assertEquals(0.0, silence.points(), 0.001, "測れなかった軸に点が入っている");
+    assertEquals(25, silence.weight(), "落とした重みが画面に出ない");
+  }
+
+  @Test
+  @DisplayName("強調の理由が、基準ごとに違う文であること")
+  void emphasisReasonBelongsToThePolicy() {
+    // 【重要】画面に固定文を持たせない。
+    // 実測で見つけた: 圧迫面接向けの「重みを抑えてあります」という文が、
+    // 英語面接の結果画面にもそのまま出ていた。英語面接で目立たせている簡潔さは
+    // 重みが最大（35）の軸なので、画面に正反対のことが書かれていた。
+    String pressure = ScoringPolicy.adoptedPressure().emphasisNote();
+    String english = ScoringPolicy.adoptedEnglish().emphasisNote();
+
+    assertFalse(pressure.isBlank(), "圧迫面接に強調の理由が無い");
+    assertFalse(english.isBlank(), "英語面接に強調の理由が無い");
+    assertNotEquals(pressure, english, "2つの基準が同じ文を使っている");
+
+    // 強調している軸が最大の重みなら、「抑えてあります」とは言えない。
+    for (ScoringPolicy p : java.util.List.of(
+        ScoringPolicy.adoptedEngineer(),
+        ScoringPolicy.adoptedPressure(),
+        ScoringPolicy.adoptedEnglish())) {
+      for (Axis a : Axis.values()) {
+        if (!p.isEmphasised(a)) {
+          continue;
+        }
+        int max = java.util.Arrays.stream(Axis.values()).mapToInt(p.weights()::of).max().orElse(0);
+        if (p.weights().of(a) == max) {
+          assertFalse(p.emphasisNote().contains("抑えて"),
+              p.version() + ": 最大の重みの軸に「抑えてあります」と書いている");
+        }
+      }
+    }
+  }
+
+  @Test
+  @DisplayName("英語面接では簡潔さを内訳で目立たせること")
+  void englishEmphasisesConciseness() {
+    assertTrue(ScoringPolicy.adoptedEnglish().isEmphasised(Axis.CONCISENESS));
+  }
+
+  @Test
+  @DisplayName("案E-1を採らなかった理由が、重みに残っていること")
+  void silenceIsNotTheHeaviestAxis() {
+    // 諏訪さんが案E-1（沈黙35）を却下された理由:
+    //   「テキスト入力だと沈黙が発生せず、35点が自動的に満点になる。
+    //     実質65点満点の勝負になって、判定が壊れます」
+    //
+    // 【重要】これは圧迫面接の一貫性（LLM判定で揺れる）と同じ扱い。
+    // 測定が不安定な軸は、重要でも単独最大にはしない。
+    ScoringPolicy english = ScoringPolicies.forMode(Mode.ENGLISH);
+    int silence = english.weights().of(Axis.SILENCE);
+    int max =
+        java.util.Arrays.stream(Axis.values()).mapToInt(english.weights()::of).max().orElse(0);
+    assertTrue(silence < max, "英語面接で沈黙が最大の重みになっている");
+
+    // 案E-1（沈黙35・簡潔さ25）は、この条件を満たさない。却下の理由がここに残る。
+    assertTrue(
+        ScoringPolicy.proposalEn1().weights().of(Axis.SILENCE)
+            >= ScoringPolicy.proposalEn1().weights().of(Axis.CONCISENESS),
+        "案E-1の性格（沈黙重視）が変わっている");
   }
 
   @Test

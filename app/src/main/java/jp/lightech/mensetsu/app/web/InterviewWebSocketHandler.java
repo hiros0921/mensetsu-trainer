@@ -106,8 +106,12 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
    */
   private void watch(WebSocketSession ws, InterviewService.Live session, int turnNo) {
     ticker.schedule(() -> {
-      if (!ws.isOpen() || session.state().isFinished() || session.turnNoNow() != turnNo) {
-        return; // 別の問に進んだ。この見張りは役目を終えた
+      if (!ws.isOpen()
+          || session.state().isFinished()
+          || session.turnNoNow() != turnNo
+          // 回答を受け取り済み。次の問が出るまで、打ち切る相手がいない。
+          || !service.isTiming(session)) {
+        return; // 役目を終えた
       }
       var cut = service.shouldCutOff(session);
       if (cut.shouldCut()) {
@@ -183,6 +187,10 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
             (int) service.silenceMs(session),
             in.path("timedOut").asBoolean(false));
 
+    // 【重要】時間を読んだあとで計測を止める。順番が逆だと0秒で記録される。
+    // 止めておかないと、生成待ちのあいだに打ち切りが飛び、同じ問へ二度回答が来る。
+    service.stopClock(session);
+
     try {
       // ① 相槌を即座に返す。LLM を呼ばないので待ち時間ゼロ。
       //    中身があるかは、この時点ではまだ観察していない。長さで当たりを付ける。
@@ -194,7 +202,11 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
 
       if (step.state().isFinished()) {
         Score score = service.scoreAndSave(session);
-        send(ws, result(score, session));
+        Map<String, Object> out = new LinkedHashMap<>(result(score, session));
+        // 【重要】どちらの入力方式で受けたかを結果に出す（第8段階の指示）。
+        // 沈黙の軸は入力方式で意味が変わる。測っていない条件を隠さない。
+        step.state().result().ifPresent(o -> out.put("inputMethod", o.inputMethodSummary()));
+        send(ws, out);
       } else {
         sendQuestion(ws, session);
       }
@@ -259,6 +271,8 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
     out.put("total", score.total());
     out.put("version", score.thresholdVersion());
     out.put("axes", axes);
+    // 強調の理由は基準ごとに違う。画面に固定文を持たせない。
+    out.put("emphasisNote", session.policy().emphasisNote());
     score.biggestGap().ifPresent(g -> {
       out.put("nextFocus", g.axis().label());
       out.put("nextFocusGain", Math.round((100 - g.raw()) * g.weight() / 10.0) / 10.0);

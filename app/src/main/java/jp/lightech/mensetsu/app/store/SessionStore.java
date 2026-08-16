@@ -7,6 +7,8 @@ import java.util.Map;
 import java.util.UUID;
 import jp.lightech.mensetsu.domain.interview.Answer;
 import jp.lightech.mensetsu.domain.interview.InterviewState;
+import jp.lightech.mensetsu.domain.interview.InterviewerProfile;
+import jp.lightech.mensetsu.domain.interview.TimingRules;
 import jp.lightech.mensetsu.domain.interview.Mode;
 import jp.lightech.mensetsu.domain.interview.PhaseTransition;
 import jp.lightech.mensetsu.domain.interview.Question;
@@ -40,6 +42,57 @@ public class SessionStore {
   public SessionStore(JdbcTemplate jdbc, ObjectMapper json) {
     this.jdbc = jdbc;
     this.json = json;
+  }
+
+  // ── 面接官の設定 ──
+
+  /**
+   * 面接官の設定を DB から読む。
+   *
+   * <h2>【重要】コードの既定値ではなく、DB を正にする（第8段階の判断）</h2>
+   *
+   * <blockquote>この3つの値を、設定として変更できる形にしておいてください。
+   * interviewer_profiles に持たせれば済むはずです。既定はT1。慣れてきたらT2に上げる、
+   * という遊び方ができます。ハードコードしないこと、それだけです。</blockquote>
+   *
+   * <p>だから制限時間を変えたいときは、SQL を1行 UPDATE すれば済む。コードは触らない。
+   *
+   * <pre>
+   *   UPDATE interviewer_profiles
+   *      SET answer_limit_ms = 60000, silence_cutoff_ms = 5000, grace_ms = 2000
+   *    WHERE code = 'english_standard';
+   * </pre>
+   */
+  public java.util.Optional<InterviewerProfile> findProfile(String code) {
+    List<Map<String, Object>> rows =
+        jdbc.queryForList(
+            """
+            SELECT code, display_name, pressure_base, probe_depth, small_talk_ratio,
+                   answer_limit_ms, silence_cutoff_ms, grace_ms
+              FROM interviewer_profiles WHERE code = ?
+            """,
+            code);
+    if (rows.isEmpty()) {
+      return java.util.Optional.empty();
+    }
+    Map<String, Object> r = rows.get(0);
+    Object limit = r.get("answer_limit_ms");
+    // 3つは揃っているか、揃っていないかのどちらか（DB の CHECK 制約で保証）。
+    TimingRules timing =
+        limit == null
+            ? null
+            : new TimingRules(
+                ((Number) limit).longValue(),
+                ((Number) r.get("silence_cutoff_ms")).longValue(),
+                ((Number) r.get("grace_ms")).longValue());
+    return java.util.Optional.of(
+        new InterviewerProfile(
+            (String) r.get("code"),
+            (String) r.get("display_name"),
+            ((Number) r.get("pressure_base")).intValue(),
+            ((Number) r.get("probe_depth")).intValue(),
+            ((Number) r.get("small_talk_ratio")).intValue(),
+            timing));
   }
 
   // ── セッション ──
