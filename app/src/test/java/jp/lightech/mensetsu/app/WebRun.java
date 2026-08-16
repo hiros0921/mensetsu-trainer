@@ -40,6 +40,10 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  *
  * <p>【重要】これは課金される。Claude API を実際に呼ぶ。
+ *
+ * <p>【重要】台本の経歴は<b>架空</b>です。実在の人物・企業を模していない（仕様書10章）。
+ * 採点の道筋を確かめるために「よく答えられる人」を再現しているだけで、
+ * 誰かの職歴ではありません。
  */
 public final class WebRun {
 

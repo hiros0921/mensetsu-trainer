@@ -12,16 +12,40 @@ Java 21 / Spring Boot 3.5 / PostgreSQL 17 / Claude API。
 
 ## 動かし方
 
+必要なもの: **JDK 21** と **Docker**。それ以外の準備は要りません（Gradle は同梱の `./gradlew`）。
+
+### APIキー無しで動かす（2コマンド）
+
 ```bash
-cp .env.example .env && chmod 600 .env   # ANTHROPIC_API_KEY を書く
-docker compose up -d                     # PostgreSQL 17（ポート 55433）
-./gradlew :app:bootRun                   # http://localhost:8080
+docker compose up -d      # PostgreSQL 17。ポート 55433（他と衝突しないようずらしてある）
+./gradlew :app:bootRun    # http://localhost:8080 を開く
 ```
 
-APIキーが無くてもスタブで最後まで動きます。画面に「スタブで動いています」と出ます。
+**キーが無くても、面接を最後まで通せて判定まで出ます。** 質問は組み込みのスタブが作ります。
+画面上部に「スタブで動いています。APIキーが未設定です」と出るので、どちらで動いているかは常に分かります。
+
+テーブルは起動時に Flyway が作ります（V1〜V5）。DB の作成手順はありません。
+
+### 本物の Claude API で動かす
 
 ```bash
-./gradlew build              # テスト164件（DB も API も要らない）
+cp .env.example .env && chmod 600 .env    # ANTHROPIC_API_KEY= に自分のキーを書く
+./gradlew :app:bootRun
+```
+
+`.env` は `.gitignore` 済みで、リポジトリには入りません。キーを `application.yml` にも書いていません。
+
+### 止める / 作り直す
+
+```bash
+docker compose down       # 止める（データは残る）
+docker compose down -v    # データごと消す。次の起動でマイグレーションが最初から走る
+```
+
+### 中身を確かめる
+
+```bash
+./gradlew build                    # テスト164件（DB も API も要らない）
 ./gradlew :domain:walkthrough      # 面接を1回、LLM なしで通す
 ./gradlew :domain:policycompare    # 基準の案を同じ面接に当てて比べる
 ./gradlew :domain:pressurepolicy   # 圧迫面接の案 × 圧の設定
