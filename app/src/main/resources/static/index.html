@@ -61,6 +61,17 @@
   #mic.on { border-color:#d66; color:#d66; }
   .listening { font-size:.76rem; color:#d66; }
   .cut { font-size:.78rem; color:#d66; }
+  /* 履歴（第9段階） */
+  #history { margin-top:20px; }
+  #history h2 { font-size:.95rem; margin:0 0 6px; }
+  .hrow { display:flex; gap:10px; align-items:baseline; padding:6px 8px;
+          border:1px solid var(--line); border-radius:6px; margin-bottom:6px; cursor:pointer; }
+  .hrow:hover { background:#8881; }
+  .hrow .g { font-weight:700; width:1.4em; }
+  .hrow .m { flex:1; }
+  .hdetail { padding:2px 8px 10px; }
+  /* 軸の名前が縦に折れると読めない。ここだけ折り返さない。 */
+  .hdetail td:first-child { white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -80,6 +91,13 @@
       <option value="ENGLISH">英語面接（音声入力を推奨）</option>
     </select>
     <button id="start">面接を始める</button>
+  </div>
+  <p class="note" id="modeNote"></p>
+
+  <div id="history" hidden>
+    <h2>これまでの面接</h2>
+    <div id="hlist"></div>
+    <p class="note" id="habandoned"></p>
   </div>
 </div>
 
@@ -371,9 +389,64 @@ function showResult(m) {
     ${emphasised.length && m.emphasisNote ? `<p class="emphnote">色を付けた「${emphasised.map(esc).join('・')}」について。
        ${esc(m.emphasisNote)}</p>` : ''}
     ${m.nextFocus ? `<p class="note">伸ばすと合計がいちばん上がるのは「${esc(m.nextFocus)}」（あと ${m.nextFocusGain}点ぶん）</p>` : ''}
-    <p class="note">基準の版: ${esc(m.version)}</p>`;
+    <p class="note">基準の版: ${esc(m.version)}</p>
+    <p><button id="again" type="button">もう一度</button></p>`;
+  $('again').onclick = () => location.reload();
   $('result').scrollIntoView();
   enable(false);
+  loadHistory();
+}
+
+// ── 履歴（第9段階） ──────────────────────────────────────────────
+//
+// 【重要】中断した面接は出さない。弾いているのはサーバー（completed_sessions ビュー）。
+// 画面側で除外条件を書くと、別の画面を足した人が書き忘れる。
+// ただし「何件あったか」は出す。混ぜないことと、無かったことにするのは違う。
+const MODE_LABEL = { ENGINEER: 'エンジニア面接', PRESSURE: '圧迫面接', ENGLISH: '英語面接' };
+
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/history?limit=20');
+    if (!r.ok) return;
+    const data = await r.json();
+    const list = $('hlist');
+    list.innerHTML = '';
+    for (const s of data.sessions) {
+      const row = document.createElement('div');
+      row.className = 'hrow';
+      row.innerHTML = `<span class="g">${esc(s.grade)}</span>
+        <span class="m">${esc(MODE_LABEL[s.mode] || s.mode)} — ${s.total}点</span>
+        <span class="note">${esc(when(s.startedAt))}</span>`;
+      const detail = document.createElement('div');
+      detail.className = 'hdetail';
+      detail.hidden = true;
+      // 内訳は保存してある。点数だけ残しても、あとから読んで意味が取れない。
+      detail.innerHTML = `<table>${(s.axes || []).map((a) => `
+        <tr><td>${esc(a.label)}</td>
+            <td class="n">${a.measured ? a.raw + '点' : '測定なし'}</td>
+            <td class="n">×${a.weight}</td>
+            <td class="why">${esc(a.why)}</td></tr>`).join('')}</table>
+        <p class="note">基準の版: ${esc(s.version)}</p>`;
+      row.onclick = () => { detail.hidden = !detail.hidden; };
+      list.append(row, detail);
+    }
+    $('history').hidden = data.sessions.length === 0;
+    $('habandoned').textContent = data.abandoned
+      ? `中断した面接が ${data.abandoned} 件あります（結果まで進んでいないので、上の一覧には入れていません）`
+      : '';
+  } catch (e) {
+    // 履歴が出ないことより、面接が始められないほうが困る。黙って諦める。
+  }
+}
+
+/** 「8月16日 20:41」の形に。年は今年なら出さない。 */
+function when(iso) {
+  const d = new Date(iso.replace(' ', 'T'));
+  if (isNaN(d)) return '';
+  const now = new Date();
+  const y = d.getFullYear() === now.getFullYear() ? '' : `${d.getFullYear()}年`;
+  return `${y}${d.getMonth() + 1}月${d.getDate()}日 `
+    + `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g,
@@ -413,6 +486,25 @@ $('text').addEventListener('keydown', (e) => {
 });
 // キー入力も「入力があった」として扱う。音声とテキストで扱いを変えない。
 $('text').addEventListener('input', notifyInput);
+
+// ── 開始画面 ──────────────────────────────────────────────────
+//
+// モードごとに何が起きるかを先に出す。何を練習しているのか分からないまま
+// 受けると、結果の内訳を読んでも自分の何が測られたのか分からない。
+const MODE_NOTE = {
+  ENGINEER: '技術用語を3段まで掘られます。「なぜそれを選んだか」「何を捨てたか」まで聞かれます。'
+    + '重いのは深さ（35）。',
+  PRESSURE: '答えが曖昧だと圧が上がり、上がり切ると逆質問まで行かずに終わります。'
+    + '前の発言との食い違いを突かれます。重いのは具体性・一貫性・沈黙（各25）。',
+  ENGLISH: '英語で進みます。1問90秒、8秒黙ると打ち切られます。'
+    + 'STAR（状況・課題・行動・結果）で答えられているかを見ます。重いのは簡潔さ（35）。',
+};
+function showModeNote() {
+  $('modeNote').textContent = MODE_NOTE[$('mode').value] || '';
+}
+$('mode').addEventListener('change', showModeNote);
+showModeNote();
+loadHistory();
 </script>
 </body>
 </html>

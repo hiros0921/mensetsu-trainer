@@ -316,6 +316,31 @@ public class SessionStore {
         .toList();
   }
 
+  /**
+   * 開いたまま放置された面接を、中断として片付ける。
+   *
+   * <p>【重要】切断は afterConnectionClosed で拾えるが、拾えない切れ方がある。
+   * アプリを落とす、端末が落ちる、回線が切れる。実測で残っていた:
+   * RUNNING のまま1日以上経った行があり、これは「中断として記録すること」
+   * （第1段階 Q4）を満たしていない。
+   *
+   * <p>閾値をどれくらいにするかは私の判断です。30分にしました。面接は長くても
+   * 15分ほどなので、間を空けて戻ってくる人を切らずに済む長さです。変えたい場合は
+   * 呼び出し側の値を変えるだけで済みます（採点の基準ではないので、こちらで決めました）。
+   *
+   * @return 中断として片付けた件数
+   */
+  public int abandonStale(int idleMinutes) {
+    return jdbc.update(
+        """
+        UPDATE sessions
+           SET status = 'ABANDONED', ended_at = now()
+         WHERE status = 'RUNNING'
+           AND last_seen_at < now() - make_interval(mins => ?)
+        """,
+        idleMinutes);
+  }
+
   // ── 読み出し ──
 
   /** 完了した面接だけを新しい順に。中断は混ぜない（ビューが弾く）。 */
@@ -325,11 +350,24 @@ public class SessionStore {
         SELECT s.public_id, s.mode, s.started_at, s.ended_at,
                sc.grade, sc.total, sc.threshold_version, sc.breakdown
           FROM completed_sessions s
-          LEFT JOIN scores sc ON sc.session_id = s.id
+          JOIN scores sc ON sc.session_id = s.id
          ORDER BY s.started_at DESC
          LIMIT ?
         """,
         limit);
+  }
+
+  /**
+   * 中断した面接の件数。
+   *
+   * <p>履歴に混ぜないが、<b>あったことは見せる</b>。混ぜないことと、無かったことにするのは違う。
+   * STAR の「観察していない」と「無かった」を型で分けたのと同じ考え方。
+   */
+  public int abandonedCount() {
+    Integer n =
+        jdbc.queryForObject(
+            "SELECT count(*) FROM sessions WHERE status = 'ABANDONED'", Integer.class);
+    return n == null ? 0 : n;
   }
 
   public java.util.Optional<Long> findIdByPublicId(UUID publicId) {

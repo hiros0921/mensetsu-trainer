@@ -123,14 +123,18 @@ public final class WebRun {
     System.out.printf("── %s を %s で通します ──%n%n", mode, input);
     send(ws, JSON.writeValueAsString(java.util.Map.of("type", "start", "mode", mode)));
 
-    for (String line : script) {
+    // 【重要】台本の本数ではなく、面接が終わるまで回す。
+    // 一度これで測り損ねた: 圧迫面接が9往復になり、台本8本を使い切った時点で
+    // ループを抜けて、結果に着く前に接続を閉じていた。往復数はモードと相手次第で変わる。
+    for (int turn = 0; turn < 30; turn++) {
       if (!client.awaitQuestion(120)) {
         break; // 結果に着いたか、落ちた
       }
+      String line = script[Math.min(turn, script.length - 1)];
       if (line == null) {
         if (!timed || !"VOICE".equals(input)) {
-          // 英語面接のテキスト入力。打ち切りは音声の通しで確かめてある。
-          // テキストでは「黙る」を再現しない。打ち切りは音声の通しで確かめてある。
+          // テキスト入力と、時間を測らないモード。ここでは「黙る」を再現しない。
+          // 打ち切りは英語・音声の通しで確かめてある。
           send(ws, JSON.writeValueAsString(
               java.util.Map.of("type", "answer", "text", "Sorry, let me think.", "input", input)));
           continue;
