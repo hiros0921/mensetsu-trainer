@@ -55,6 +55,19 @@ tasks.register<JavaExec>("pressuresweep") {
   mainClass.set("jp.lightech.mensetsu.domain.interview.PressureSweep")
 }
 
+// 英語面接モードの基準案を比べる。
+//
+//   ./gradlew :domain:englishpolicy
+//
+// 第8段階では重みの表と理由だけで選んでいただいた。ほかの2モードには分布があるのに
+// ここだけ無かったので、後から作った。入力方式による点の動きも並べてある。
+tasks.register<JavaExec>("englishpolicy") {
+  group = "verification"
+  description = "英語面接モードのスコアリング案を、入力方式ごとに比べる"
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass.set("jp.lightech.mensetsu.domain.scoring.EnglishPolicyCompare")
+}
+
 // 圧迫面接モードの基準案を比べる。
 //
 //   ./gradlew :domain:pressurepolicy

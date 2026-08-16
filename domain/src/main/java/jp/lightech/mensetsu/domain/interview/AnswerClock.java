@@ -52,6 +52,20 @@ public record AnswerClock(
     return new AnswerClock(rules, nowMs, nowMs, false, false);
   }
 
+  /**
+   * その面接官に合う時計を作る。
+   *
+   * <p>【重要】ここが「測るのは全モード、打ち切るのは制限時間を持つ面接官だけ」の
+   * 唯一の置き場所。呼ぶ側（app）に判断を書くと、モードを足したときに
+   * 書き忘れる。実際、第8段階でそれをやって日本語モードの計測が落ちた。
+   */
+  public static AnswerClock forProfile(InterviewerProfile profile, long nowMs) {
+    TimingRules rules = TimingRulesRegistry.forProfile(profile);
+    return rules == null
+        ? measuring(TimingRulesRegistry.measurementOnly(), nowMs)
+        : started(rules, nowMs);
+  }
+
   /** 入力があった。沈黙の起点を更新する。 */
   public AnswerClock onInput(long nowMs) {
     return new AnswerClock(rules, askedAtMs, nowMs, true, enforcing);

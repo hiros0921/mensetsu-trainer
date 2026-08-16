@@ -25,23 +25,39 @@ import jp.lightech.mensetsu.domain.stub.StubEngine;
  * <p>簡潔さの測り方を確かめたいだけなので、観察をそのまま渡せる面接官を用意する。
  * これはスタブの代わりではなく、スタブの手前にある「観察を固定した面接官」。
  */
-final class EnglishRuns {
+class EnglishRuns {
 
   /** 1往復ぶんの観察。 */
   record Turn(int wordCount, Star star) {}
 
-  private EnglishRuns() {}
+  EnglishRuns() {}
 
   /** 与えた観察がそのまま返る面接で、英語面接を1回通す。 */
   static InterviewState run(List<Turn> turns) {
+    return run(turns, InputMethod.VOICE, 1_000, false);
+  }
+
+  /**
+   * 入力方式と沈黙も指定して通す。
+   *
+   * <p>【重要】沈黙をここで指定できるようにしてあるのは、案E-1 の問題
+   * （テキストで受けると沈黙が満点に張り付く）を、言葉ではなく点数で見るため。
+   *
+   * @param silenceMs 1往復あたりの沈黙
+   * @param muteOne 1往復だけ完全に黙る（打ち切り）を混ぜるか
+   */
+  static InterviewState run(List<Turn> turns, InputMethod input, int silenceMs, boolean muteOne) {
     InterviewMachine machine = new InterviewMachine(new Fixed(turns));
     Step s = machine.begin(Mode.ENGLISH, InterviewerProfile.englishStandard());
     int i = 0;
     while (!s.state().isFinished() && i < 20) {
       i++;
+      boolean mute = muteOne && i == 3;
       s = machine.submit(
           s.state(),
-          new Answer("answer " + i, InputMethod.VOICE, 40_000, 1_000, false));
+          mute
+              ? new Answer("", input, 11_000, 8_000, true)
+              : new Answer("answer " + i, input, 40_000, silenceMs, false));
     }
     return s.state();
   }

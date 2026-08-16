@@ -21,8 +21,6 @@ import jp.lightech.mensetsu.domain.interview.PressureConfigs;
 import jp.lightech.mensetsu.domain.interview.PressureModel;
 import jp.lightech.mensetsu.domain.interview.Question;
 import jp.lightech.mensetsu.domain.interview.Step;
-import jp.lightech.mensetsu.domain.interview.TimingRules;
-import jp.lightech.mensetsu.domain.interview.TimingRulesRegistry;
 import jp.lightech.mensetsu.domain.port.EngineCall;
 import jp.lightech.mensetsu.domain.port.EngineObserver;
 import jp.lightech.mensetsu.domain.port.InterviewerEngine;
@@ -284,13 +282,8 @@ public class InterviewService {
     session.pendingTurnId =
         store.recordQuestion(session.dbId, session.turnNo, q, session.state.phase().name());
     // 【重要】質問を出した瞬間から測る。どのモードでも測る。
-    // 制限時間を持つ面接官のときだけ、打ち切りまでする。
-    long now = System.currentTimeMillis();
-    TimingRules rules = TimingRulesRegistry.forProfile(session.profile);
-    session.clock =
-        rules == null
-            ? AnswerClock.measuring(TimingRulesRegistry.measurementOnly(), now)
-            : AnswerClock.started(rules, now);
+    // 打ち切るかどうかの判断は AnswerClock.forProfile が持っている。ここには書かない。
+    session.clock = AnswerClock.forProfile(session.profile, System.currentTimeMillis());
   }
 
   /**
