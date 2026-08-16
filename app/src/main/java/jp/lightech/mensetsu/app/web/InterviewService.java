@@ -8,6 +8,7 @@ import jp.lightech.mensetsu.app.llm.ClaudeEngine;
 import jp.lightech.mensetsu.app.llm.LlmSettings;
 import jp.lightech.mensetsu.app.store.SessionStore;
 import jp.lightech.mensetsu.domain.interview.Answer;
+import jp.lightech.mensetsu.domain.interview.AnswerClock;
 import jp.lightech.mensetsu.domain.interview.CannedLines;
 import jp.lightech.mensetsu.domain.interview.Expression;
 import jp.lightech.mensetsu.domain.interview.ExpressionRules;
@@ -20,6 +21,8 @@ import jp.lightech.mensetsu.domain.interview.PressureConfigs;
 import jp.lightech.mensetsu.domain.interview.PressureModel;
 import jp.lightech.mensetsu.domain.interview.Question;
 import jp.lightech.mensetsu.domain.interview.Step;
+import jp.lightech.mensetsu.domain.interview.TimingRules;
+import jp.lightech.mensetsu.domain.interview.TimingRulesRegistry;
 import jp.lightech.mensetsu.domain.port.EngineCall;
 import jp.lightech.mensetsu.domain.port.EngineObserver;
 import jp.lightech.mensetsu.domain.port.InterviewerEngine;
@@ -94,6 +97,8 @@ public class InterviewService {
     long pendingTurnId;
     int turnNo;
     String lastFiller = "";
+    /** この問の時計。時間を測らないモードでは null。 */
+    volatile AnswerClock clock;
 
     Live(long dbId, UUID publicId, InterviewMachine machine, InterviewerEngine engine,
         ScoringPolicy policy) {
@@ -114,6 +119,15 @@ public class InterviewService {
 
     public ScoringPolicy policy() {
       return policy;
+    }
+
+    public AnswerClock clock() {
+      return clock;
+    }
+
+    /** 今が何問目か。見張りが「まだ同じ問か」を確かめるために使う。 */
+    public int turnNoNow() {
+      return turnNo;
     }
   }
 
@@ -231,8 +245,8 @@ public class InterviewService {
   public String filler(Live session, boolean answerLooksSubstantive) {
     String line =
         CannedLines.pick(
-            session.state.phase(), session.state.pressure(), answerLooksSubstantive,
-            session.lastFiller);
+            session.state.mode(), session.state.phase(), session.state.pressure(),
+            answerLooksSubstantive, session.lastFiller);
     session.lastFiller = line;
     return line;
   }
@@ -265,6 +279,48 @@ public class InterviewService {
     session.turnNo++;
     session.pendingTurnId =
         store.recordQuestion(session.dbId, session.turnNo, q, session.state.phase().name());
+    // 【重要】質問を出した瞬間から測る。時間を測らないモードでは null のまま。
+    TimingRules rules = TimingRulesRegistry.forMode(session.state.mode());
+    session.clock = rules == null ? null : AnswerClock.started(rules, System.currentTimeMillis());
+  }
+
+  /**
+   * 入力があったことを知らせる。
+   *
+   * <p>【重要】クライアントが送るのは「入力があった」という事実だけ。
+   * それを何秒の沈黙とみなすかは、こちらが決める（仕様書5章161行）。
+   */
+  public void onInput(Live session) {
+    AnswerClock c = session.clock;
+    if (c != null) {
+      session.clock = c.onInput(System.currentTimeMillis());
+    }
+  }
+
+  /** 今、打ち切るべきか。時間を測らないモードでは常に「打ち切らない」。 */
+  public AnswerClock.Cutoff shouldCutOff(Live session) {
+    AnswerClock c = session.clock;
+    return c == null
+        ? new AnswerClock.Cutoff(false, "")
+        : c.cutoff(System.currentTimeMillis());
+  }
+
+  /** 画面のタイマー表示に使う残り時間。時間を測らないモードでは -1。 */
+  public long remainingMs(Live session) {
+    AnswerClock c = session.clock;
+    return c == null ? -1 : c.remainingMs(System.currentTimeMillis());
+  }
+
+  /** この問で詰まっていた時間。回答を保存するときに使う。 */
+  public long silenceMs(Live session) {
+    AnswerClock c = session.clock;
+    return c == null ? 0 : c.silenceMs(System.currentTimeMillis());
+  }
+
+  /** この問にかかった時間。 */
+  public long elapsedMs(Live session) {
+    AnswerClock c = session.clock;
+    return c == null ? 0 : c.elapsedMs(System.currentTimeMillis());
   }
 
   private InterviewerEngine engineFor(long dbId, Sink sink) {

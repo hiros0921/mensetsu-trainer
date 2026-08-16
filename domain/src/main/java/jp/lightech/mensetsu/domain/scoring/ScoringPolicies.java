@@ -29,14 +29,23 @@ public final class ScoringPolicies {
     return switch (mode) {
       case ENGINEER -> ScoringPolicy.adoptedEngineer();
       case PRESSURE -> ScoringPolicy.adoptedPressure();
-      case ENGLISH ->
-          throw new IllegalStateException(
-              "英語面接の基準はまだ決まっていません（第8段階で案を出して決めます）。"
-                  + "簡潔さと沈黙が主軸になる見込みで、エンジニア面接の基準とは重みが違います");
+      // 【重要】まだ決まっていない。案E-3を仮に使う。
+      //
+      // 第7段階までは、決まっていないモードでは止めていた。第8段階では
+      // 音声入力と打ち切りを実際に動かして確かめる必要があるので、仮の基準を入れる。
+      //
+      // 仮であることは version（english-e3）から分かる。採用したら
+      // adoptedEnglish() を足して、そちらを返すように変える。
+      case ENGLISH -> ScoringPolicy.proposalEn3();
     };
   }
 
-  /** そのモードの基準が決まっているか。画面で「まだ判定を出せません」と伝えるために使う。 */
+  /**
+   * そのモードの基準が決まっているか。
+   *
+   * <p>英語面接は動くが、基準は仮のもの。画面に「仮の基準です」と出すために使う。
+   * 動くことと、決まっていることは違う。
+   */
   public static boolean isDecided(Mode mode) {
     return mode != Mode.ENGLISH;
   }

@@ -21,6 +21,9 @@ import java.util.Objects;
  * @param hasContradiction 前の回答と矛盾しているか。PRESSURE で突く材料。
  * @param contradictionWith 何と矛盾しているか。無ければ空。
  * @param note 所見。画面には出さない。動作確認とデバッグ用。
+ * @param star STAR構造の観察（仕様書4-3）。英語面接以外では観察しない
+ * @param wordCount 語数。英語面接で「簡潔に答えられているか」を見るために使う。
+ *     日本語では語の区切りが曖昧なので、英語面接以外では0
  */
 public record Analysis(
     List<String> technicalTerms,
@@ -28,9 +31,25 @@ public record Analysis(
     boolean substantive,
     boolean hasContradiction,
     String contradictionWith,
-    String note) {
+    String note,
+    Star star,
+    int wordCount) {
+
+  /** STAR と語数を観察しない場合（英語面接以外）。 */
+  public Analysis(
+      List<String> technicalTerms,
+      Specificity specificity,
+      boolean substantive,
+      boolean hasContradiction,
+      String contradictionWith,
+      String note) {
+    this(technicalTerms, specificity, substantive, hasContradiction, contradictionWith, note,
+        Star.notObserved(), 0);
+  }
 
   public Analysis {
+    star = star == null ? Star.notObserved() : star;
+    wordCount = Math.max(0, wordCount);
     // 防御的にコピーする。呼び出し側が後から書き換えると、
     // 記録として残した分析が静かに変わる。
     technicalTerms = technicalTerms == null ? List.of() : List.copyOf(technicalTerms);

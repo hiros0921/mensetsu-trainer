@@ -54,6 +54,13 @@
   tr.emph td { background:#d6620f14; }
   tr.emph td:first-child { font-weight:700; box-shadow: inset 3px 0 0 #d6620f; }
   .emphnote { font-size:.78rem; color:var(--dim); margin-top:6px; }
+  /* 制限時間と音声入力（第8段階） */
+  .timer { font-variant-numeric: tabular-nums; font-weight:600; }
+  .timer.low { color:#d66; }
+  .silence { font-size:.76rem; color:var(--dim); }
+  #mic.on { border-color:#d66; color:#d66; }
+  .listening { font-size:.76rem; color:#d66; }
+  .cut { font-size:.78rem; color:#d66; }
 </style>
 </head>
 <body>
@@ -62,13 +69,14 @@
 
 <div id="setup">
   <p class="note">
-    モードを選んで始めてください。英語面接の判定基準は第8段階で決めます。
+    モードを選んで始めてください。英語面接は制限時間つきで、音声入力が使えます
+    （Chrome / Edge。非対応ならテキストに切り替わります）。
   </p>
   <div class="bar">
     <select id="mode">
       <option value="ENGINEER">エンジニア面接</option>
       <option value="PRESSURE">圧迫面接</option>
-      <option value="ENGLISH">英語面接（基準は未決）</option>
+      <option value="ENGLISH">英語面接（基準は仮）</option>
     </select>
     <button id="start">面接を始める</button>
   </div>
@@ -81,7 +89,10 @@
     <span class="gauge"><i id="pressure"></i></span>
     <span id="pnum" class="meta">—</span>
     <span id="engine" class="meta"></span>
+    <span id="timerBox" hidden>残り <span id="timer" class="timer">—</span>秒
+      <span id="silence" class="silence"></span></span>
   </div>
+  <div id="provisional" class="warn" hidden></div>
   <div class="stage">
     <div class="face">
       <img id="faceImg" src="/img/calm.svg" alt="面接官">
@@ -91,9 +102,12 @@
   </div>
   <form id="form">
     <textarea id="text" placeholder="回答を入力して Ctrl+Enter"></textarea>
-    <button id="send" type="submit">送信</button>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <button id="send" type="submit">送信</button>
+      <button id="mic" type="button" hidden>🎤 音声</button>
+    </div>
   </form>
-  <p class="note">入力方式は記録として残ります。音声入力は第8段階で足します。</p>
+  <p class="note" id="inputNote">入力方式は記録として残ります。</p>
 </div>
 
 <div id="result" hidden></div>
@@ -105,6 +119,9 @@ const $ = (id) => document.getElementById(id);
 let ws = null;
 let answeredAt = Date.now();   // 回答にかかった時間を測る起点
 let current = null;            // 生成中の発言の DOM
+let inputMethod = 'TEXT';      // 記録として残すだけ。進行の判断には使わない
+let recognition = null;        // Web Speech API。非対応なら null のまま
+let listening = false;
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -120,6 +137,24 @@ function handle(m) {
       $('setup').hidden = true;
       $('live').hidden = false;
       $('engine').textContent = m.engine === 'CLAUDE' ? '' : '（スタブで動いています。APIキーが未設定です）';
+      if (m.provisional) {
+        $('provisional').hidden = false;
+        $('provisional').textContent =
+          `判定の基準は仮のものです（${m.policy}）。第8段階で決めます。`;
+      }
+      setupVoice(m.mode);
+      break;
+
+    case 'tick':
+      // 【重要】残り時間はサーバーが計った値。画面は表示するだけ。
+      showTimer(m.remainingMs, m.silenceMs);
+      break;
+
+    case 'cutoff':
+      // サーバーが打ち切りを決めた。今ある文字をそのまま送る。
+      append('cut', `— ${m.reason}`);
+      stopListening();
+      submitAnswer(true);
       break;
 
     case 'unavailable':
@@ -148,6 +183,7 @@ function handle(m) {
       current = null;
       setPhase(m.phase, m.pressure);
       setFace(m.face, m.faceLabel);
+      showTimer(m.limitMs, 0);
       enable(true);
       answeredAt = Date.now();
       break;
@@ -185,6 +221,93 @@ function setFace(key, label) {
     $('faceName').textContent = label || '';
     img.classList.remove('fading');
   }, 350);
+}
+
+// ── 制限時間の表示（仕様書4-3・5章）──
+// 【重要】判定はサーバー。ここは表示するだけ。
+// 画面のタイマーが多少ずれても、打ち切りの判断には影響しない。
+function showTimer(remainingMs, silenceMs) {
+  const box = $('timerBox');
+  if (remainingMs < 0) { box.hidden = true; return; }
+  box.hidden = false;
+  const sec = Math.ceil(remainingMs / 1000);
+  $('timer').textContent = sec;
+  $('timer').classList.toggle('low', sec <= 15);
+  $('silence').textContent = silenceMs > 2000 ? `（${Math.floor(silenceMs / 1000)}秒 沈黙）` : '';
+}
+
+// ── 音声入力（仕様書5章）──
+//
+// 【重要】ブラウザ内で文字列にする。音声そのものはサーバーへ送らない。
+// サーバーが受け取るのは、テキスト入力と同じ文字列だけ。
+//
+// 対応していないブラウザ、マイクを拒否された場合は、テキスト入力に落とす。
+// 落ちても面接は成立する。それがこの設計の狙い。
+function setupVoice(mode) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    $('inputNote').textContent =
+      'このブラウザは音声入力に対応していません（Chrome / Edge で使えます）。テキストで進めます。';
+    return;
+  }
+  recognition = new SR();
+  recognition.lang = mode === 'ENGLISH' ? 'en-US' : 'ja-JP';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let committed = '';
+  recognition.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) committed += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    $('text').value = committed + interim;
+    // 発話があった、という事実だけを送る。何秒の沈黙かはサーバーが決める。
+    notifyInput();
+  };
+  recognition.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      $('inputNote').textContent =
+        'マイクが使えませんでした（権限が拒否されています）。テキストで進めます。';
+      $('mic').hidden = true;
+      recognition = null;
+    }
+    stopListening();
+  };
+  recognition.onend = () => { if (listening) { try { recognition.start(); } catch (_) {} } };
+
+  $('mic').hidden = false;
+  $('mic').onclick = () => {
+    if (listening) { stopListening(); return; }
+    committed = $('text').value;
+    listening = true;
+    inputMethod = 'VOICE';
+    $('mic').classList.add('on');
+    $('mic').textContent = '■ 停止';
+    $('inputNote').innerHTML = '<span class="listening">● 認識中です。話してください。</span>';
+    try { recognition.start(); } catch (_) {}
+  };
+  $('inputNote').textContent = '音声かテキストか、どちらでも進められます。';
+}
+
+function stopListening() {
+  if (!listening) return;
+  listening = false;
+  $('mic').classList.remove('on');
+  $('mic').textContent = '🎤 音声';
+  $('inputNote').textContent = '音声かテキストか、どちらでも進められます。';
+  try { recognition && recognition.stop(); } catch (_) {}
+}
+
+// 入力があった、という事実だけをサーバーへ。判定はサーバーがする。
+let lastNotify = 0;
+function notifyInput() {
+  const now = Date.now();
+  if (now - lastNotify < 400) return;   // 1文字ごとに送らない
+  lastNotify = now;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'input' }));
 }
 
 function setPhase(phase, pressure) {
@@ -255,25 +378,32 @@ $('start').onclick = async () => {
   ws.send(JSON.stringify({ type: 'start', mode: $('mode').value }));
 };
 
-$('form').onsubmit = (e) => {
-  e.preventDefault();
+function submitAnswer(timedOut) {
   const text = $('text').value.trim();
-  if (!text) return;
-  addTurn('あなた', text, '').className = 'a';
+  // 打ち切りのときは、空でも送る。無言だったことを記録する必要がある。
+  if (!text && !timedOut) return;
+  stopListening();
+  addTurn('あなた', text || '(無言)', '').className = 'a';
   ws.send(JSON.stringify({
     type: 'answer',
     text,
-    input: 'TEXT',
-    elapsedMs: Date.now() - answeredAt,
-    silenceMs: 0,           // 沈黙の検出は第8段階（英語面接）で入れる
+    input: inputMethod,
+    timedOut: !!timedOut,
+    // 【重要】時間はサーバーが計った値を使う。ここでは送らない。
   }));
   $('text').value = '';
+  inputMethod = 'TEXT';
   enable(false);
-};
+  $('timerBox').hidden = true;
+}
+
+$('form').onsubmit = (e) => { e.preventDefault(); submitAnswer(false); };
 
 $('text').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) $('form').requestSubmit();
 });
+// キー入力も「入力があった」として扱う。音声とテキストで扱いを変えない。
+$('text').addEventListener('input', notifyInput);
 </script>
 </body>
 </html>

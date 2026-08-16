@@ -2,6 +2,7 @@ package jp.lightech.mensetsu.domain.scoring;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -117,20 +118,31 @@ class AdoptedPolicyTest {
   }
 
   @Test
-  @DisplayName("決まっていないモードでは、基準を引こうとすると止まること")
-  void undecidedModesRefuseToScore() {
+  @DisplayName("採用済みのモードでは、採用された基準が返ること")
+  void adoptedModesUseTheirOwnPolicy() {
     // 【重要】黙って流用してはいけない。点は出るしエラーも出ないが、
     // その数字が別のモードの基準で出たことは、誰にも分からなくなる。
     assertEquals(ScoringPolicy.adoptedEngineer(), ScoringPolicies.forMode(Mode.ENGINEER));
     assertEquals(ScoringPolicy.adoptedPressure(), ScoringPolicies.forMode(Mode.PRESSURE));
+    // モードごとに違う基準であること。同じなら分けている意味が無い。
+    assertNotEquals(
+        ScoringPolicies.forMode(Mode.ENGINEER).version(),
+        ScoringPolicies.forMode(Mode.PRESSURE).version());
+  }
 
-    IllegalStateException english =
-        assertThrows(IllegalStateException.class, () -> ScoringPolicies.forMode(Mode.ENGLISH));
-    assertTrue(english.getMessage().contains("第8段階"), english.getMessage());
+  @Test
+  @DisplayName("英語面接は動くが、基準が仮であると分かること")
+  void englishRunsButIsStillProvisional() {
+    // 第8段階で、音声入力と打ち切りを実際に動かすために仮の基準を入れた。
+    // 【重要】動くことと、決まっていることは違う。
+    // version から仮であることが分かるようにしてある（採用済みなら english-v1 になる）。
+    ScoringPolicy english = ScoringPolicies.forMode(Mode.ENGLISH);
+    assertTrue(english.version().startsWith("english-e"),
+        "仮の基準だと分からない version: " + english.version());
 
     assertTrue(ScoringPolicies.isDecided(Mode.ENGINEER));
     assertTrue(ScoringPolicies.isDecided(Mode.PRESSURE));
-    assertFalse(ScoringPolicies.isDecided(Mode.ENGLISH));
+    assertFalse(ScoringPolicies.isDecided(Mode.ENGLISH), "英語面接が決定済みになっている");
   }
 
   @Test

@@ -7,6 +7,7 @@ import jp.lightech.mensetsu.domain.interview.InterviewState;
 import jp.lightech.mensetsu.domain.interview.Outcome;
 import jp.lightech.mensetsu.domain.interview.TermResult;
 import jp.lightech.mensetsu.domain.port.Specificity;
+import jp.lightech.mensetsu.domain.port.Star;
 
 /**
  * 面接の記録から、5軸の素点を出す。
@@ -118,6 +119,9 @@ public final class Scorer {
     if (answered.isEmpty()) {
       return AxisScore.notMeasured(Axis.CONCISENESS, "答えた回答がありません");
     }
+    if (params.useWordsAndStar()) {
+      return concisenessByWordsAndStar(answered);
+    }
     int inBand = 0;
     int tooShort = 0;
     int tooLong = 0;
@@ -139,6 +143,111 @@ public final class Scorer {
             .formatted(
                 answered.size(), inBand,
                 params.conciseMinChars(), params.conciseMaxChars(), tooShort, tooLong));
+  }
+
+  /**
+   * 英語面接での簡潔さ。語数の帯と STAR構造の両方を見る。
+   *
+   * <h2>なぜ2つを合わせるか</h2>
+   *
+   * 仕様書4-3の判定軸は「回答の語数、詰まった回数、STAR構造」。語数だけを見ると、
+   * 適切な長さで中身の無い回答が満点になる。STAR だけを見ると、
+   * 4つを詰め込んだ長すぎる回答が満点になる。
+   *
+   * <p>半分ずつにしてある。「語数が帯に入った割合」と「STAR が揃っている割合」の平均。
+   * 重み付けをすると、決めるべき数値がまた1つ増える。
+   */
+  private AxisScore concisenessByWordsAndStar(List<Exchange> answered) {
+    int inBand = 0;
+    int tooShort = 0;
+    int tooLong = 0;
+    int starPoints = 0;
+    int starObserved = 0;
+
+    for (Exchange e : answered) {
+      int words = e.analysis().wordCount();
+      if (words < params.wordMin()) {
+        tooShort++;
+      } else if (words > params.wordMax()) {
+        tooLong++;
+      } else {
+        inBand++;
+      }
+      Star star = e.analysis().star();
+      if (star.observed()) {
+        starObserved++;
+        starPoints += star.count();
+      }
+    }
+
+    if (starObserved == 0) {
+      // STAR を観察していない。語数だけで測る。
+      // 【重要】ここで STAR を「0点」にしない。観察していないだけで、無かったわけではない。
+      int value = Math.round(inBand * 100f / answered.size());
+      return AxisScore.of(
+          Axis.CONCISENESS,
+          value,
+          "%d回中 %d回が %d〜%d語に収まっていました（短すぎ %d回・長すぎ %d回）。"
+              .formatted(answered.size(), inBand, params.wordMin(), params.wordMax(),
+                  tooShort, tooLong)
+              + "STAR構造は観察されていません");
+    }
+
+    float wordScore = inBand * 100f / answered.size();
+    float starScore = starPoints * 100f / (starObserved * 4);
+    int value = Math.round((wordScore + starScore) / 2);
+
+    String missing = mostMissedStarElements(answered);
+    return AxisScore.of(
+        Axis.CONCISENESS,
+        value,
+        "語数: %d回中 %d回が %d〜%d語（短すぎ %d回・長すぎ %d回）。STAR: %d回で %d/%d 要素%s"
+            .formatted(answered.size(), inBand, params.wordMin(), params.wordMax(),
+                tooShort, tooLong, starObserved, starPoints, starObserved * 4, missing));
+  }
+
+  /** いちばん多く欠けていた STAR の要素。次に何を足せばよいかを伝えるため。 */
+  private static String mostMissedStarElements(List<Exchange> answered) {
+    int noS = 0;
+    int noT = 0;
+    int noA = 0;
+    int noR = 0;
+    for (Exchange e : answered) {
+      Star star = e.analysis().star();
+      if (!star.observed()) {
+        continue;
+      }
+      if (!star.situation()) {
+        noS++;
+      }
+      if (!star.task()) {
+        noT++;
+      }
+      if (!star.action()) {
+        noA++;
+      }
+      if (!star.result()) {
+        noR++;
+      }
+    }
+    int worst = Math.max(Math.max(noS, noT), Math.max(noA, noR));
+    if (worst == 0) {
+      return "（4要素すべて揃っていました）";
+    }
+    StringBuilder b = new StringBuilder("。いちばん欠けていたのは ");
+    if (noS == worst) {
+      b.append("状況 ");
+    }
+    if (noT == worst) {
+      b.append("課題 ");
+    }
+    if (noA == worst) {
+      b.append("行動 ");
+    }
+    if (noR == worst) {
+      b.append("結果 ");
+    }
+    return b.append("(%d回)".formatted(worst)).toString();
   }
 
   // ── 一貫性 ──

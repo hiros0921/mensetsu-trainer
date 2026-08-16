@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.util.List;
 import jp.lightech.mensetsu.domain.port.Analysis;
 import jp.lightech.mensetsu.domain.port.Specificity;
+import jp.lightech.mensetsu.domain.port.Star;
 
 /**
  * LLM に返させる観察の形。
@@ -31,16 +32,33 @@ public record AnalysisJson(
         boolean substantive,
     @JsonPropertyDescription("これまでの発言と食い違っているか") boolean hasContradiction,
     @JsonPropertyDescription("何と食い違っているか。無ければ空文字") String contradictionWith,
-    @JsonPropertyDescription("所見。20字以内") String note) {
+    @JsonPropertyDescription("所見。20字以内") String note,
+    @JsonPropertyDescription("回答の語数。英語なら空白区切りの単語数。日本語なら0") int wordCount,
+    @JsonPropertyDescription("STAR構造: 状況（どういう状況だったか）が述べられているか")
+        boolean starSituation,
+    @JsonPropertyDescription("STAR構造: 課題（何をすべきだったか）が述べられているか")
+        boolean starTask,
+    @JsonPropertyDescription("STAR構造: 行動（自分が何をしたか）が述べられているか")
+        boolean starAction,
+    @JsonPropertyDescription("STAR構造: 結果（どうなったか）が述べられているか")
+        boolean starResult) {
 
-  /** ドメインの型に移す。ここが境界。 */
-  public Analysis toDomain() {
+  /**
+   * ドメインの型に移す。ここが境界。
+   *
+   * @param starObserved STAR を観察させたか。英語面接以外では false
+   */
+  public Analysis toDomain(boolean starObserved) {
     return new Analysis(
         technicalTerms == null ? List.of() : technicalTerms,
         new Specificity(hasNumber, hasProperNoun, firstPerson),
         substantive,
         hasContradiction,
         contradictionWith,
-        note);
+        note,
+        starObserved
+            ? Star.of(starSituation, starTask, starAction, starResult)
+            : Star.notObserved(),
+        wordCount);
   }
 }

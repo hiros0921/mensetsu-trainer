@@ -110,19 +110,26 @@ public record ScoringPolicy(
   }
 
   public String describe() {
+    String band =
+        params.useWordsAndStar()
+            ? "簡潔さ %d〜%d語 ＋ STAR構造".formatted(params.wordMin(), params.wordMax())
+            : "簡潔さ %d〜%d字".formatted(params.conciseMinChars(), params.conciseMaxChars());
+    String emph = emphasised.isEmpty()
+        ? "なし"
+        : emphasised.stream().map(Axis::label).sorted().reduce((a, b) -> a + "・" + b).orElse("");
     return """
         %s（%s）
           立場  : %s
           重み  : %s
           境目  : %s
-          帯    : 簡潔さ %d〜%d字 ／ 沈黙の許容 %.1f秒
-          測定なし: %s"""
+          帯    : %s ／ 沈黙の許容 %.1f秒
+          測定なし: %s
+          内訳で強調: %s"""
         .formatted(
             label, version, note,
             weights.describe(), thresholds.describe(),
-            params.conciseMinChars(), params.conciseMaxChars(),
-            params.silenceToleranceMs() / 1000.0,
-            unmeasured.label());
+            band, params.silenceToleranceMs() / 1000.0,
+            unmeasured.label(), emph);
   }
 
   // ══════════════════════════════════════════════════════════════════
@@ -361,6 +368,77 @@ public record ScoringPolicy(
   /** 圧迫面接モードの3案。 */
   public static List<ScoringPolicy> pressureProposals() {
     return List.of(proposalR1(), proposalR2(), proposalR3());
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  //  英語面接モードの基準【案】（第8段階）
+  //  採用されていません。
+  // ══════════════════════════════════════════════════════════════════
+
+  /**
+   * 案E-1「時間内に言い切る」。
+   *
+   * <p>仕様書4-3「制限時間と沈黙の再現が主眼」を、そのまま重みにしたもの。
+   * 沈黙を最も重く見る。詰まらずに話し切れるかが英語面接の中心だという立場。
+   *
+   * <p><b>気をつける点</b>: 沈黙は時間の記録が要ります。音声入力を使わず、
+   * テキストで落ち着いて書くと沈黙は発生しにくく、この軸が満点に張り付きます。
+   */
+  public static ScoringPolicy proposalEn1() {
+    return new ScoringPolicy(
+        "english-e1",
+        "案E-1・時間内に言い切る",
+        "沈黙を最重視。詰まらずに話し切れるかが中心",
+        Weights.of(15, 25, 10, 15, 35),
+        new GradeThresholds(86, 72, 56, 40),
+        AxisParams.words(40, 150, 4000),
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
+  }
+
+  /**
+   * 案E-2「構造立てて答える」。
+   *
+   * <p>簡潔さ（語数＋STAR構造）を最も重く見る。時間内に収まっても、
+   * 状況・課題・行動・結果が抜けていれば伝わらない、という立場。
+   *
+   * <p>英語面接の練習として、いちばん持ち帰るものが多いのはこの案だと思います。
+   * STAR は準備で身に付くので、練習の効果が出やすい部分です。
+   */
+  public static ScoringPolicy proposalEn2() {
+    return new ScoringPolicy(
+        "english-e2",
+        "案E-2・構造立てて答える",
+        "語数とSTAR構造を最重視。伝わる形になっているかが中心",
+        Weights.of(20, 35, 10, 10, 25),
+        new GradeThresholds(86, 72, 56, 40),
+        AxisParams.words(40, 150, 4000),
+        UnmeasuredHandling.ZERO,
+        // STAR構造は準備で身に付く部分なので、内訳で目立たせて次に何を足すかを伝える。
+        java.util.Set.of(Axis.CONCISENESS));
+  }
+
+  /**
+   * 案E-3「バランス」。
+   *
+   * <p>簡潔さと沈黙を同じくらいに置く。どちらかに寄せる根拠が薄いなら、
+   * ここから始めて実際に受けてみるのが早い、という立場。
+   */
+  public static ScoringPolicy proposalEn3() {
+    return new ScoringPolicy(
+        "english-e3",
+        "案E-3・バランス",
+        "簡潔さと沈黙を同じくらいに。具体性も残す",
+        Weights.of(20, 25, 10, 15, 30),
+        new GradeThresholds(86, 72, 56, 40),
+        AxisParams.words(40, 150, 4000),
+        UnmeasuredHandling.ZERO,
+        java.util.Set.of());
+  }
+
+  /** 英語面接モードの3案。 */
+  public static List<ScoringPolicy> englishProposals() {
+    return List.of(proposalEn1(), proposalEn2(), proposalEn3());
   }
 
   /**

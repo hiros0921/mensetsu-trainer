@@ -129,8 +129,30 @@ final class Prompts {
         - hasContradiction: これまでの発言と食い違っているか
         - contradictionWith: 何と食い違っているか。無ければ空文字
         - note: 所見。20字以内
+        %s
         """
-        .formatted(history(state), lastQuestion(state), answerText);
+        .formatted(history(state), lastQuestion(state), answerText, starPart(state));
+  }
+
+  /**
+   * 英語面接でだけ、語数と STAR構造を聞く（仕様書4-3）。
+   *
+   * <p>毎回聞くと、その分だけ観察が遅くなり、費用も増える。STAR は英語面接モードの軸なので、
+   * そのモードでだけ聞く。
+   */
+  private static String starPart(InterviewState state) {
+    if (state.mode() != Mode.ENGLISH) {
+      return "- wordCount: 0（このモードでは数えません）\n"
+          + "- starSituation / starTask / starAction / starResult: すべて false（このモードでは見ません）";
+    }
+    return """
+        - wordCount: 回答の語数。空白で区切った単語の数
+        - starSituation: 状況（どういう場面だったか）が述べられているか
+        - starTask: 課題（何をすべきだったか）が述べられているか
+        - starAction: 行動（自分が何をしたか）が述べられているか
+        - starResult: 結果（どうなったか）が述べられているか
+
+        STAR は「4つ揃っているか」を見るだけです。揃っていることが良いかどうかの判断はしません。        """;
   }
 
   private static String lastQuestion(InterviewState state) {

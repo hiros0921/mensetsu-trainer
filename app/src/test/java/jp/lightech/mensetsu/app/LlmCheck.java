@@ -91,7 +91,7 @@ public final class LlmCheck {
       // ① 相槌を即座に返す。LLM を呼ばないので待ち時間ゼロ。
       long fillerAt = System.nanoTime();
       String filler =
-          CannedLines.pick(step.state().phase(), step.state().pressure(), true, lastFiller);
+          CannedLines.pick(mode, step.state().phase(), step.state().pressure(), true, lastFiller);
       lastFiller = filler;
       System.out.printf("  面接官: %s   [%dms・定型／LLMなし]%n", filler, ms(fillerAt));
 

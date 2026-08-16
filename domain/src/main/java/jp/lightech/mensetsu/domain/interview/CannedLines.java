@@ -24,6 +24,14 @@ import java.util.List;
  *
  * 「なるほど」が3回続くと、聞いていないことが露骨に伝わる。実際の面接でも同じ。
  * 直前に使ったものを避けるだけで、かなり不自然さが減る。
+ *
+ * <h2>【重要】モードの言語に合わせること</h2>
+ *
+ * 最初は日本語だけを持っていた。英語面接を通したときに、面接官が
+ * 英語で質問しているのに相槌だけ「なるほど。」と返った。
+ *
+ * <p>深掘りは LLM が作るので言語が合う。相槌はこちらが持っているので、
+ * こちらで合わせないと合わない。定型を持つ側の責任。
  */
 public final class CannedLines {
 
@@ -59,6 +67,23 @@ public final class CannedLines {
           "はい……。",
           "なるほど。");
 
+  // ── 英語面接用 ──
+  //
+  // 日本語の対訳ではなく、英語の面接官が実際に挟む言い方を選んである。
+  // 「なるほど」を直訳した "I see." だけを並べても、英語の面接には聞こえない。
+
+  private static final List<String> NEUTRAL_EN =
+      List.of("I see.", "Thank you.", "Understood.", "Right.", "Okay.");
+
+  private static final List<String> PROBING_EN =
+      List.of("I see — could you tell me a bit more?", "Go on.", "Hmm.", "Tell me more about that.");
+
+  private static final List<String> PRESSURED_EN =
+      List.of("...", "Right.", "And?", "Please continue.");
+
+  private static final List<String> AFTER_EMPTY_EN =
+      List.of("...I see.", "Right...", "Okay.");
+
   private CannedLines() {}
 
   /**
@@ -70,22 +95,24 @@ public final class CannedLines {
    * @param previous 直前に使った相槌。同じものを避けるために渡す。無ければ空文字
    */
   public static String pick(
-      Phase phase, int pressure, boolean answerWasSubstantive, String previous) {
-    List<String> pool = poolFor(phase, pressure, answerWasSubstantive);
+      Mode mode, Phase phase, int pressure, boolean answerWasSubstantive, String previous) {
+    List<String> pool = poolFor(mode, phase, pressure, answerWasSubstantive);
     return choose(pool, previous);
   }
 
-  private static List<String> poolFor(Phase phase, int pressure, boolean substantive) {
+  private static List<String> poolFor(
+      Mode mode, Phase phase, int pressure, boolean substantive) {
+    boolean english = mode == Mode.ENGLISH;
     if (!substantive) {
-      return AFTER_EMPTY;
+      return english ? AFTER_EMPTY_EN : AFTER_EMPTY;
     }
     if (phase == Phase.PRESSURE || pressure >= 70) {
-      return PRESSURED;
+      return english ? PRESSURED_EN : PRESSURED;
     }
     if (phase == Phase.PROBE) {
-      return PROBING;
+      return english ? PROBING_EN : PROBING;
     }
-    return NEUTRAL;
+    return english ? NEUTRAL_EN : NEUTRAL;
   }
 
   /**

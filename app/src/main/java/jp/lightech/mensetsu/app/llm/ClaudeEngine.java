@@ -170,7 +170,7 @@ public final class ClaudeEngine implements InterviewerEngine {
       }
       long ms = millisSince(started);
       record(EngineCall.ANALYZE_ANSWER, ms, started, true, "");
-      return json.toDomain();
+      return json.toDomain(state.mode() == jp.lightech.mensetsu.domain.interview.Mode.ENGLISH);
 
     } catch (RuntimeException e) {
       // 【重要】モデルごとの対応表をコードに埋め込まない。
@@ -188,7 +188,7 @@ public final class ClaudeEngine implements InterviewerEngine {
           if (json != null) {
             record(EngineCall.ANALYZE_ANSWER, millisSince(started), started, true,
                 "深さの指定を外して再試行");
-            return json.toDomain();
+            return json.toDomain(state.mode() == jp.lightech.mensetsu.domain.interview.Mode.ENGLISH);
           }
         } catch (RuntimeException retry) {
           record(EngineCall.ANALYZE_ANSWER, -1, started, false, describe(retry));
@@ -243,7 +243,7 @@ public final class ClaudeEngine implements InterviewerEngine {
   private Question fallbackFiller(InterviewState state) {
     String line =
         jp.lightech.mensetsu.domain.interview.CannedLines.pick(
-            state.phase(), state.pressure(), true, lastFiller);
+            state.mode(), state.phase(), state.pressure(), true, lastFiller);
     lastFiller = line;
     return Question.canned(line);
   }

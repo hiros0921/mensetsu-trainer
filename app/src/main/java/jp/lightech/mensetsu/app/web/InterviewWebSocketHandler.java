@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import jp.lightech.mensetsu.domain.interview.Answer;
 import jp.lightech.mensetsu.domain.interview.InputMethod;
 import jp.lightech.mensetsu.domain.interview.Mode;
@@ -54,6 +56,17 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
    */
   private final ExecutorService worker = Executors.newCachedThreadPool();
 
+  /**
+   * 制限時間と沈黙を見張る時計（仕様書4-3・5章）。
+   *
+   * <p>【重要】判定はサーバー側でする。クライアントに任せない。
+   * クライアントが送るのは「入力があった」という事実だけで、
+   * 何秒の沈黙とみなすか、打ち切るかどうかはここが決める。
+   *
+   * <p>0.5秒ごとに見に行く。細かくしても体感は変わらず、粗くすると打ち切りが遅れて見える。
+   */
+  private final ScheduledExecutorService ticker = Executors.newSingleThreadScheduledExecutor();
+
   public InterviewWebSocketHandler(InterviewService service, ObjectMapper json) {
     this.service = service;
     this.json = json;
@@ -67,8 +80,47 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
     switch (type) {
       case "start" -> worker.submit(() -> start(ws, in));
       case "answer" -> worker.submit(() -> answer(ws, in));
+      // 入力があった、という事実だけ。何秒の沈黙かはサーバーが決める。
+      case "input" -> onInput(ws);
       default -> send(ws, Map.of("type", "error", "message", "知らない指示です: " + type));
     }
+  }
+
+  private void onInput(WebSocketSession ws) {
+    InterviewService.Live session = sessionOf(ws);
+    if (session != null) {
+      service.onInput(session);
+    }
+  }
+
+  private InterviewService.Live sessionOf(WebSocketSession ws) {
+    Object id = ws.getAttributes().get("publicId");
+    return id instanceof UUID publicId ? service.find(publicId) : null;
+  }
+
+  /**
+   * 制限時間と沈黙を見張る。
+   *
+   * <p>打ち切るときは、クライアントに「今ある文字を送れ」と伝える。
+   * 文字はブラウザにしか無いので、こちらからは取れない。指示だけを出す。
+   */
+  private void watch(WebSocketSession ws, InterviewService.Live session, int turnNo) {
+    ticker.schedule(() -> {
+      if (!ws.isOpen() || session.state().isFinished() || session.turnNoNow() != turnNo) {
+        return; // 別の問に進んだ。この見張りは役目を終えた
+      }
+      var cut = service.shouldCutOff(session);
+      if (cut.shouldCut()) {
+        send(ws, Map.of("type", "cutoff", "reason", cut.reason()));
+        return;
+      }
+      long remaining = service.remainingMs(session);
+      if (remaining >= 0) {
+        send(ws, Map.of("type", "tick", "remainingMs", remaining,
+            "silenceMs", service.silenceMs(session)));
+      }
+      watch(ws, session, turnNo);
+    }, 500, TimeUnit.MILLISECONDS);
   }
 
   @Override
@@ -92,7 +144,11 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
           "type", "started",
           "sessionId", session.publicId().toString(),
           "mode", mode.name(),
-          "engine", service.usingLlm() ? "CLAUDE" : "STUB"));
+          "engine", service.usingLlm() ? "CLAUDE" : "STUB",
+          // 基準が仮のモードでは、画面にそう出す。動くことと決まっていることは違う。
+          "provisional",
+          !jp.lightech.mensetsu.domain.scoring.ScoringPolicies.isDecided(mode),
+          "policy", session.policy().label()));
       sendQuestion(ws, session);
 
     } catch (IllegalStateException e) {
@@ -116,8 +172,15 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
     String text = in.path("text").asText("");
     InputMethod input =
         "VOICE".equals(in.path("input").asText("TEXT")) ? InputMethod.VOICE : InputMethod.TEXT;
+    // 【重要】時間はサーバーが測った値を使う。クライアントが送ってきた値は使わない。
+    // 端末の時計がずれていても、タブが裏に回っても、同じ面接になるようにするため。
+    // 時間を測らないモードでは0が入る。
     Answer answer =
-        new Answer(text, input, in.path("elapsedMs").asInt(0), in.path("silenceMs").asInt(0),
+        new Answer(
+            text,
+            input,
+            (int) service.elapsedMs(session),
+            (int) service.silenceMs(session),
             in.path("timedOut").asBoolean(false));
 
     try {
@@ -158,7 +221,12 @@ public class InterviewWebSocketHandler extends TextWebSocketHandler {
     m.put("face", face.fileKey());
     m.put("faceLabel", face.label());
     m.put("turnNo", state.turnNo() + 1);
+    // 制限時間。時間を測らないモードでは -1 で、画面はタイマーを出さない。
+    m.put("limitMs", service.remainingMs(session));
     send(ws, m);
+    if (service.remainingMs(session) >= 0) {
+      watch(ws, session, session.state().turnNo() + 1);
+    }
   }
 
   /**
